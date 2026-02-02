@@ -198,13 +198,14 @@ public class BibleVerse {
         StringBuilder formatted = new StringBuilder();
 
         // Reference (Full Version Name) in bold
-        formatted.append("*").append(reference);
+        // Use HTML markers because we're using <b> for verses
+        formatted.append("<b>").append(reference);
         if (versionName != null && !versionName.isBlank()) {
             formatted.append(" (").append(versionName).append(")");
         } else if (translation != null && !translation.isBlank()) {
             formatted.append(" (").append(translation).append(")");
         }
-        formatted.append("*\n\n");
+        formatted.append("</b>\n\n");
 
         // Verse text - clean up and format
         String cleanedText = cleanText(text);
@@ -219,9 +220,12 @@ public class BibleVerse {
     private String cleanText(String rawText) {
         if (rawText == null || rawText.isBlank()) return "";
 
-        // 1. Remove [1], [2] etc verse markers if they exist at the beginning or within text
-        // API.Bible text often has these
-        String cleaned = rawText.replaceAll("\\[\\d+\\]", "");
+        // API.Bible now provides verse numbers in <b>1</b> format from ApiBibleService
+        // We want to preserve those, so we don't strip them anymore.
+        String cleaned = rawText;
+
+        // If it still has [1] brackets (e.g. from YouVersion or if ApiBible formatting changed), convert them to <b>1</b>
+        cleaned = cleaned.replaceAll("\\[(\\d+)\\]", "<b>$1</b> ");
 
         // 2. Handle paragraphs: API.Bible might use multiple newlines or specific markers
         // Let's normalize multiple newlines to double newlines (standard paragraph break)

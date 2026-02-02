@@ -45,12 +45,24 @@ public class BibleService {
         log.debug("Verse not in cache, fetching from API");
         BibleVerse verse;
         String translation = reference.getTranslation();
-        if (youVersionApiService.isSupported(translation)) {
+        if (apiBibleService.isSupported(translation)) {
+            if (translation == null) {
+                // If no translation specified, create a new reference with default KJV for API.Bible
+                BibleReference kjvRef = BibleReference.builder()
+                        .book(reference.getBook())
+                        .chapter(reference.getChapter())
+                        .verseStart(reference.getVerseStart())
+                        .verseEnd(reference.getVerseEnd())
+                        .translation("KJV")
+                        .build();
+                verse = apiBibleService.fetchVerse(kjvRef);
+            } else {
+                verse = apiBibleService.fetchVerse(reference);
+            }
+        } else if (youVersionApiService.isSupported(translation)) {
             verse = youVersionApiService.fetchVerse(reference);
-        } else if (apiBibleService.isSupported(translation)) {
-            verse = apiBibleService.fetchVerse(reference);
         } else {
-            // Fallback to API.Bible (public domain)
+            // Fallback to API.Bible (public domain KJV)
             verse = apiBibleService.fetchVerse(reference);
         }
 

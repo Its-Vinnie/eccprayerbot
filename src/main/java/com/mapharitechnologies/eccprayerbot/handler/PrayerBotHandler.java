@@ -6,6 +6,7 @@ import com.mapharitechnologies.eccprayerbot.model.BotRequest;
 import com.mapharitechnologies.eccprayerbot.service.BibleService;
 import com.mapharitechnologies.eccprayerbot.service.RequestLoggingService;
 import com.mapharitechnologies.eccprayerbot.util.BibleReferenceParser;
+import com.mapharitechnologies.eccprayerbot.util.MessageSplitter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -17,6 +18,8 @@ import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * Main Telegram Bot Handler
@@ -156,14 +159,19 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
      */
     private void sendVerse(Long chatId, BibleVerse verse) {
         try {
-            SendMessage message = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(verse.formatForTelegram())
-                    .parseMode("Markdown")
-                    .disableWebPagePreview(true)
-                    .build();
+            String fullText = verse.formatForTelegram();
+            List<String> chunks = MessageSplitter.split(fullText);
 
-            execute(message);
+            for (String chunk : chunks) {
+                SendMessage message = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text(chunk)
+                        .parseMode("HTML")
+                        .disableWebPagePreview(true)
+                        .build();
+
+                execute(message);
+            }
 
         } catch (TelegramApiException e) {
             logger.error("Failed to send verse to chat {}", chatId, e);
@@ -179,7 +187,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             SendMessage message = SendMessage.builder()
                     .chatId(chatId.toString())
                     .text(text)
-                    .parseMode("Markdown")
+                    .parseMode("HTML")
                     .disableWebPagePreview(true)
                     .build();
 
