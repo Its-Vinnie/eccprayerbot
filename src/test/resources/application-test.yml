@@ -1,0 +1,21 @@
+telegram:
+  bot:
+    token: mock-token
+    username: mock-bot
+
+bible:
+  youversion:
+    base-url: https://api.youversion.com
+    key: mock-key
+    default-version: 111
+    timeout: 5000
+  api-bible:
+    base-url: https://api.scripture.api.bible/v1
+    key: mock-key
+    default-version: de4e12af7f28f599-01
+    timeout: 5000
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/testdb

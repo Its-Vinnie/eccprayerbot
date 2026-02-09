@@ -216,7 +216,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
      */
     private void handleFetchFailure(Long chatId, BibleReference reference,
                                     long startTime, BotRequest request) {
-        String errorMsg = "Unable to retrieve " + reference.toDisplayString() + " at this time";
+        String errorMsg = "Unable to retrieve " + reference.toDisplayString() + " please check your scripture's spelling and try again";
         sendMessage(chatId, errorMsg);
 
         long responseTime = System.currentTimeMillis() - startTime;
