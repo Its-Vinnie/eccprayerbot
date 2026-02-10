@@ -25,4 +25,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
-CMD python3 -m listener.app & java -Dserver.port=$PORT $JAVA_OPTS -jar /app/target/prayer-bot-1.0.0-MVP.jar
+CMD ["/bin/sh", "-c", "python3 -m listener.app & java -Dserver.port=$PORT ${JAVA_OPTS} -jar /app/target/prayer-bot-1.0.0-MVP.jar"]
