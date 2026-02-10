@@ -86,7 +86,11 @@ def main() -> None:
 
         if Settings.debug_audio:
             print(f"[listener] Processing chunk: {len(chunk)} bytes")
-        transcript = transcriber.transcribe_raw_pcm(chunk)
+        transcript = transcriber.transcribe_raw_pcm(
+            chunk,
+            sample_rate=Settings.sample_rate,
+            channels=Settings.channels,
+        )
         if not transcript:
             continue
         print(f"[listener] Transcript: {transcript}")
