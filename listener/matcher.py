@@ -2,18 +2,21 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from listener.ref_parser import BibleReference, extract_translation, parse_reference
-from listener.verse_index import VerseIndex, VerseRecord
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from listener.verse_index import VerseIndex, VerseRecord
 
 
 @dataclass
 class MatchResult:
     reference: Optional[BibleReference]
     translation: str
-    candidates: List[tuple[VerseRecord, float]]
+    candidates: List[tuple["VerseRecord", float]]
 
 
 class VerseMatcher:
-    def __init__(self, verse_index: VerseIndex, default_translation: str, min_score: float, strong_score: float, top_k: int):
+    def __init__(self, verse_index: Optional["VerseIndex"], default_translation: str, min_score: float, strong_score: float, top_k: int):
         self.verse_index = verse_index
         self.default_translation = default_translation
         self.min_score = min_score
