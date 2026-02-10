@@ -114,20 +114,21 @@ class TelegramGroupCallListener:
         factory = GroupCallFactory(self.client, enable_logs_to_console=self.pytgcalls_logs)
         self.group_call = factory.get_raw_group_call(on_recorded_data=self._on_recorded_data)
 
-        chat_id = await self._resolve_chat_id(self.chat_target)
-        print(f"[listener] Resolved chat target {self.chat_target} -> {chat_id}")
+        chat = await self._resolve_chat(self.chat_target)
+        chat_id = chat.id
+        title = chat.title or chat.username or str(chat.id)
+        print(f"[listener] Resolved chat target {self.chat_target} -> {chat_id} ({title})")
         await self._join_call_with_retry(chat_id)
 
         # Keep running
         await asyncio.Event().wait()
 
-    async def _resolve_chat_id(self, target: str) -> int:
+    async def _resolve_chat(self, target: str):
         if target.startswith("@"):
             target = target[1:]
         if target.startswith("t.me/"):
             target = target.replace("t.me/", "")
-        chat = await self.client.get_chat(target)
-        return chat.id
+        return await self.client.get_chat(target)
 
     async def _join_call_with_retry(self, chat_id: int, retries: int = 20, delay: float = 5.0):
         for _ in range(retries):

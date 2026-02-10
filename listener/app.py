@@ -93,8 +93,13 @@ def main() -> None:
                 samples = struct.unpack("<" + "h" * sample_count, chunk)
                 mean_sq = sum((s * s) for s in samples) / sample_count
                 rms = math.sqrt(mean_sq)
+                nonzero = sum(1 for s in samples if s != 0)
+                max_abs = max((abs(s) for s in samples), default=0)
                 dbfs = 20.0 * math.log10(rms / 32768.0) if rms > 0 else -120.0
-                print(f"[listener] Processing chunk: {len(chunk)} bytes, rms={rms:.1f}, dBFS={dbfs:.1f}")
+                print(
+                    f"[listener] Processing chunk: {len(chunk)} bytes, rms={rms:.1f}, "
+                    f"dBFS={dbfs:.1f}, nonzero={nonzero}, max_abs={max_abs}"
+                )
             else:
                 print(f"[listener] Processing chunk: {len(chunk)} bytes, rms=0.0, dBFS=-120.0")
         transcript = transcriber.transcribe_raw_pcm(
