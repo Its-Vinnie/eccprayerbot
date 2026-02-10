@@ -4,5 +4,3 @@ tgcalls==3.0.0.dev6
 tgcrypto==1.2.5
 requests==2.32.3
 faster-whisper==1.0.3
-numpy==1.26.4
-sentence-transformers==2.7.0

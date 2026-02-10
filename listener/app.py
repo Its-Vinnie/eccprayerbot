@@ -8,7 +8,6 @@ from listener.matcher import VerseMatcher
 from listener.ref_parser import parse_reference
 from listener.telegram_sender import TelegramSender
 from listener.transcriber import WhisperTranscriber
-from listener.verse_index import VerseIndex
 
 
 def normalize_chat_target(target: str) -> str:
@@ -40,6 +39,7 @@ def main() -> None:
 
     verse_index = None
     if Settings.paraphrase_enabled:
+        from listener.verse_index import VerseIndex
         verse_index = VerseIndex(
             Settings.verse_data_path,
             Settings.embeddings_path,
