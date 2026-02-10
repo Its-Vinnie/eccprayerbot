@@ -11,6 +11,11 @@ WORKDIR /app
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    libopus-dev \
+    libgl1 \
+    libglib2.0-0 \
+    portaudio19-dev \
+    libsndfile1 \
     openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
