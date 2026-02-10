@@ -11,6 +11,7 @@ WORKDIR /app
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy app
