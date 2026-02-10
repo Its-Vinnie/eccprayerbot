@@ -124,7 +124,7 @@ class TelegramGroupCallListener:
         print(f"[listener] Logged in as {me.id} @{me.username or 'no-username'} (bot={me.is_bot})")
 
         self._caller = TgCaller(self.client)
-        self._caller.add_plugin(self._plugin)
+        self._caller.register_plugin(self._plugin)
         await self._caller.start()
 
         chat = await self._resolve_chat(self.chat_target)
