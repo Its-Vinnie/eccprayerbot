@@ -9,7 +9,13 @@ from pytgcalls import GroupCallFactory
 
 
 class AudioChunker:
-    def __init__(self, chunk_seconds: float, sample_rate: int = 48000, channels: int = 2):
+    def __init__(
+        self,
+        chunk_seconds: float,
+        sample_rate: int = 48000,
+        channels: int = 1,
+        debug_audio: bool = False,
+    ):
         self.sample_rate = sample_rate
         self.channels = channels
         self.sample_width = 2
@@ -17,6 +23,7 @@ class AudioChunker:
         self.buffer = bytearray()
         self.lock = threading.Lock()
         self.queue: Queue[bytes] = Queue()
+        self.debug_audio = debug_audio
 
     def add(self, raw: bytes) -> None:
         if not raw:
@@ -27,6 +34,8 @@ class AudioChunker:
                 chunk = bytes(self.buffer[: self.chunk_bytes])
                 del self.buffer[: self.chunk_bytes]
                 self.queue.put(chunk)
+                if self.debug_audio:
+                    print(f"[listener] Audio chunk queued: {len(chunk)} bytes (queue {self.queue.qsize()})")
 
     def get(self, timeout: float = 0.2) -> Optional[bytes]:
         try:

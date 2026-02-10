@@ -27,6 +27,8 @@ class Settings:
     chunk_seconds = float(env("LISTENER_CHUNK_SECONDS", "2"))
     debounce_seconds = float(env("LISTENER_DEBOUNCE_SECONDS", "3"))
     duplicate_cooldown = float(env("LISTENER_DUPLICATE_COOLDOWN_SECONDS", "30"))
+    sample_rate = int(env("LISTENER_SAMPLE_RATE", "48000"))
+    channels = int(env("LISTENER_CHANNELS", "1"))
     debug_audio = env("LISTENER_DEBUG_AUDIO", "true").lower() == "true"
     debug_audio_interval = float(env("LISTENER_DEBUG_AUDIO_INTERVAL_SECONDS", "5"))
     pytgcalls_logs = env("LISTENER_PYTG_LOGS", "true").lower() == "true"

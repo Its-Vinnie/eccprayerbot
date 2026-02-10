@@ -25,7 +25,12 @@ def main() -> None:
 
     Settings.validate()
 
-    chunker = AudioChunker(chunk_seconds=Settings.chunk_seconds)
+    chunker = AudioChunker(
+        chunk_seconds=Settings.chunk_seconds,
+        sample_rate=Settings.sample_rate,
+        channels=Settings.channels,
+        debug_audio=Settings.debug_audio,
+    )
     listener = TelegramGroupCallListener(
         api_id=int(Settings.tg_api_id),
         api_hash=Settings.tg_api_hash,
@@ -79,6 +84,8 @@ def main() -> None:
         if not chunk:
             continue
 
+        if Settings.debug_audio:
+            print(f"[listener] Processing chunk: {len(chunk)} bytes")
         transcript = transcriber.transcribe_raw_pcm(chunk)
         if not transcript:
             continue
