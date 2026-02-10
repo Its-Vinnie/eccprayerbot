@@ -124,7 +124,7 @@ class TelegramGroupCallListener:
         print(f"[listener] Logged in as {me.id} @{me.username or 'no-username'} (bot={me.is_bot})")
 
         self._caller = TgCaller(self.client)
-        self._caller.register_plugin(self._plugin)
+        self._register_plugin(self._caller, self._plugin)
         await self._caller.start()
 
         chat = await self._resolve_chat(self.chat_target)
@@ -154,3 +154,21 @@ class TelegramGroupCallListener:
                 print(f"[listener] Join call failed: {type(exc).__name__}: {exc}")
                 await asyncio.sleep(delay)
         raise RuntimeError("Failed to join group call after retries")
+
+    @staticmethod
+    def _register_plugin(caller: TgCaller, plugin: BasePlugin) -> None:
+        if hasattr(caller, "register_plugin"):
+            caller.register_plugin(plugin)
+            return
+        if hasattr(caller, "add_plugin"):
+            caller.add_plugin(plugin)
+            return
+        plugins = getattr(caller, "plugins", None)
+        if plugins is not None:
+            if hasattr(plugins, "register"):
+                plugins.register(plugin)
+                return
+            if hasattr(plugins, "add"):
+                plugins.add(plugin)
+                return
+        raise RuntimeError("TgCaller plugin system not available; cannot capture audio frames")
