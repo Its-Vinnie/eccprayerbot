@@ -1,8 +1,11 @@
 [phases.setup]
-nixPkgs = ['maven', 'jdk17']
+nixPkgs = ['maven', 'jdk17', 'python311', 'ffmpeg', 'python311Packages.pip']
 
 [phases.build]
 cmds = ['mvn clean package -DskipTests']
 
+[phases.install]
+cmds = ['pip3 install -r listener/requirements.txt']
+
 [start]
-cmd = 'java -Dserver.port=$PORT $JAVA_OPTS -jar target/prayer-bot-1.0.0-MVP.jar'
+cmd = 'python3 -m listener.app & java -Dserver.port=$PORT $JAVA_OPTS -jar target/prayer-bot-1.0.0-MVP.jar'

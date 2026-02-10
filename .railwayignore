@@ -1,0 +1,9 @@
+target/
+logs/
+.venv311/
+*.log
+*.gz
+*.pdf
+*.json
+listener/data/verse_embeddings.npy
+listener/data/verses-1769.json

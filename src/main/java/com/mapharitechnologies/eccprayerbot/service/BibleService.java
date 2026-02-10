@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Main Bible service orchestrating cache and API calls
@@ -20,9 +21,15 @@ public class BibleService {
 
     private final YouVersionApiService youVersionApiService;
     private final ApiBibleService apiBibleService;
-    private final BibleVerseRepository verseRepository;
+    private final Optional<BibleVerseRepository> verseRepository;
 
-    public BibleService(YouVersionApiService youVersionApiService, ApiBibleService apiBibleService, BibleVerseRepository verseRepository) {
+    private static final Set<String> CACHEABLE_TRANSLATIONS = Set.of(
+            "KJV", "ASV", "WEB", "WEBBE", "BBE", "FBV", "RSV", "GNT", "DRA", "GNV", "TCNT", "RV"
+    );
+
+    public BibleService(YouVersionApiService youVersionApiService,
+                        ApiBibleService apiBibleService,
+                        Optional<BibleVerseRepository> verseRepository) {
         this.youVersionApiService = youVersionApiService;
         this.apiBibleService = apiBibleService;
         this.verseRepository = verseRepository;
@@ -79,19 +86,22 @@ public class BibleService {
      */
     private Optional<BibleVerse> findInCache(BibleReference reference) {
         try {
+            if (verseRepository.isEmpty()) {
+                return Optional.empty();
+            }
             String translation = reference.getTranslation();
 
             if (translation != null) {
-                return verseRepository.findByReferenceAndTranslation(
+                return verseRepository.get().findByReferenceAndTranslation(
                         reference.toDisplayString(), translation);
             } else if (reference.getVerseStart() != null) {
-                return verseRepository.findByBookAndChapterAndVerse(
+                return verseRepository.get().findByBookAndChapterAndVerse(
                         reference.getBook(),
                         reference.getChapter(),
                         reference.getVerseStart());
             } else {
                 // For whole chapters, we might want a different lookup or just skip cache for now
-                return verseRepository.findByReference(reference.toDisplayString());
+                return verseRepository.get().findByReference(reference.toDisplayString());
             }
         } catch (Exception e) {
             log.error("Error accessing MongoDB cache for reference: {}", reference.toDisplayString(), e);
@@ -104,13 +114,24 @@ public class BibleService {
      */
     private void saveToCache(BibleVerse verse) {
         try {
+            if (verseRepository.isEmpty()) {
+                return;
+            }
+            String translation = verse.getTranslation();
+            if (translation == null || !isCacheableTranslation(translation)) {
+                return;
+            }
             verse.setCachedAt(LocalDateTime.now());
-            verseRepository.save(verse);
+            verseRepository.get().save(verse);
             log.debug("Verse saved to cache: {}", verse.getReference());
         } catch (Exception e) {
             log.warn("Failed to cache verse: {}", verse.getReference(), e);
             // Don't throw - caching failure shouldn't break the flow
         }
+    }
+
+    private boolean isCacheableTranslation(String translation) {
+        return CACHEABLE_TRANSLATIONS.contains(translation.toUpperCase());
     }
 
     /**

@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 /**
  * Service for logging and analyzing bot requests
@@ -17,9 +18,9 @@ public class RequestLoggingService {
 
     private static final Logger log = LoggerFactory.getLogger(RequestLoggingService.class);
 
-    private final BotRequestRepository requestRepository;
+    private final Optional<BotRequestRepository> requestRepository;
 
-    public RequestLoggingService(BotRequestRepository requestRepository) {
+    public RequestLoggingService(Optional<BotRequestRepository> requestRepository) {
         this.requestRepository = requestRepository;
     }
 
@@ -29,12 +30,15 @@ public class RequestLoggingService {
     @Async
     public void logSuccess(BotRequest request, String parsedReference, long responseTimeMs) {
         try {
+            if (requestRepository.isEmpty()) {
+                return;
+            }
             request.setSuccessful(true);
             request.setParsedReference(parsedReference);
             request.setResponseTimeMs(responseTimeMs);
             request.setRespondedAt(LocalDateTime.now());
 
-            requestRepository.save(request);
+            requestRepository.get().save(request);
 
             log.info("Request logged - Chat: {}, Reference: {}, Time: {}ms",
                     request.getChatId(), parsedReference, responseTimeMs);
@@ -56,12 +60,15 @@ public class RequestLoggingService {
     @Async
     public void logFailure(BotRequest request, String errorMessage, long responseTimeMs) {
         try {
+            if (requestRepository.isEmpty()) {
+                return;
+            }
             request.setSuccessful(false);
             request.setErrorMessage(errorMessage);
             request.setResponseTimeMs(responseTimeMs);
             request.setRespondedAt(LocalDateTime.now());
 
-            requestRepository.save(request);
+            requestRepository.get().save(request);
 
             log.warn("Failed request logged - Chat: {}, Error: {}",
                     request.getChatId(), errorMessage);
@@ -76,8 +83,11 @@ public class RequestLoggingService {
      */
     public double getSuccessRate() {
         try {
-            long successful = requestRepository.countBySuccessfulTrue();
-            long failed = requestRepository.countBySuccessfulFalse();
+            if (requestRepository.isEmpty()) {
+                return 0.0;
+            }
+            long successful = requestRepository.get().countBySuccessfulTrue();
+            long failed = requestRepository.get().countBySuccessfulFalse();
             long total = successful + failed;
 
             if (total == 0) return 0.0;

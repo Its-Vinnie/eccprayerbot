@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableAsync;
 
+import java.util.Objects;
+
 /**
  * ECCPrayerBot - Main Application Entry Point
  *
@@ -31,6 +33,14 @@ public class EccPrayerBotApplication {
                 System.setProperty(entry.getKey(), entry.getValue());
             }
         });
+
+        // Disable Mongo auto-config if no MongoDB URI is provided.
+        String mongoUri = System.getProperty("MONGODB_URI");
+        if (mongoUri == null || mongoUri.isBlank()) {
+            String exclude = "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration,"
+                    + "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration";
+            System.setProperty("spring.autoconfigure.exclude", exclude);
+        }
 
         SpringApplication.run(EccPrayerBotApplication.class, args);
     }

@@ -4,7 +4,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "java -Dserver.port=$PORT $JAVA_OPTS -jar target/prayer-bot-1.0.0-MVP.jar",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 300
   }
