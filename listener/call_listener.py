@@ -111,6 +111,8 @@ class TelegramGroupCallListener:
 
     async def _start_async(self):
         await self.client.start()
+        me = await self.client.get_me()
+        print(f"[listener] Logged in as {me.id} @{me.username or 'no-username'} (bot={me.is_bot})")
         factory = GroupCallFactory(self.client, enable_logs_to_console=self.pytgcalls_logs)
         self.group_call = factory.get_raw_group_call(on_recorded_data=self._on_recorded_data)
 
