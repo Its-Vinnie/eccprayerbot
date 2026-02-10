@@ -56,6 +56,7 @@ class TelegramGroupCallListener:
         debug_audio: bool = False,
         debug_audio_interval: float = 5.0,
         pytgcalls_logs: bool = False,
+        debug_audio_signature: bool = False,
     ):
         # Pyrogram 2.x supports session strings via session_string parameter.
         self.client = Client(session_name, api_id=api_id, api_hash=api_hash, session_string=session_string)
@@ -66,23 +67,55 @@ class TelegramGroupCallListener:
         self.debug_audio = debug_audio
         self.debug_audio_interval = debug_audio_interval
         self.pytgcalls_logs = pytgcalls_logs
+        self.debug_audio_signature = debug_audio_signature
         self._debug_last_log = time.time()
         self._debug_bytes = 0
         self._debug_calls = 0
+        self._debug_signature_logged = False
 
     def _on_recorded_data(self, *args, **kwargs):
         # PyTgCalls passes raw PCM bytes; signature differs by version.
-        data = None
+        candidates: list[bytes] = []
         for arg in args:
             if isinstance(arg, (bytes, bytearray)):
-                data = bytes(arg)
-                break
-        if data is None:
-            data = kwargs.get("data")
-            if isinstance(data, (bytes, bytearray)):
-                data = bytes(data)
+                candidates.append(bytes(arg))
             else:
-                data = None
+                data_attr = getattr(arg, "data", None)
+                if isinstance(data_attr, (bytes, bytearray)):
+                    candidates.append(bytes(data_attr))
+                frame_attr = getattr(arg, "frame", None)
+                if isinstance(frame_attr, (bytes, bytearray)):
+                    candidates.append(bytes(frame_attr))
+        for key, value in kwargs.items():
+            if isinstance(value, (bytes, bytearray)):
+                candidates.append(bytes(value))
+            else:
+                data_attr = getattr(value, "data", None)
+                if isinstance(data_attr, (bytes, bytearray)):
+                    candidates.append(bytes(data_attr))
+                frame_attr = getattr(value, "frame", None)
+                if isinstance(frame_attr, (bytes, bytearray)):
+                    candidates.append(bytes(frame_attr))
+
+        data = None
+        best_score = -1
+        for buf in candidates:
+            if not buf:
+                continue
+            # sample non-zero bytes to avoid full scan
+            step = max(1, len(buf) // 256)
+            score = sum(1 for i in range(0, len(buf), step) if buf[i] != 0)
+            if score > best_score:
+                best_score = score
+                data = buf
+
+        if self.debug_audio_signature and not self._debug_signature_logged:
+            arg_types = [type(a).__name__ for a in args]
+            kw_types = {k: type(v).__name__ for k, v in kwargs.items()}
+            cand_sizes = [len(c) for c in candidates]
+            print(f"[listener] Audio callback signature args={arg_types} kwargs={kw_types} candidates={cand_sizes}")
+            self._debug_signature_logged = True
+
         if data:
             self.chunker.add(data)
             if self.debug_audio:
