@@ -45,41 +45,6 @@ class AudioChunker:
             return None
 
 
-class TelegramGroupCallListener:
-    def __init__(
-        self,
-        api_id: int,
-        api_hash: str,
-        session_name: str,
-        session_string: str,
-        chat_target: str,
-        chunker: AudioChunker,
-        debug_audio: bool = False,
-        debug_audio_interval: float = 5.0,
-        pytgcalls_logs: bool = False,
-        debug_audio_signature: bool = False,
-        receive_mode: str = "raw",
-        file_output_path: str = "/tmp/voice_call.wav",
-    ):
-        # Pyrogram 2.x supports session strings via session_string parameter.
-        self.client = Client(session_name, api_id=api_id, api_hash=api_hash, session_string=session_string)
-        self.chat_target = chat_target
-        self.chunker = chunker
-        self.group_call = None
-        self.thread = None
-        self.debug_audio = debug_audio
-        self.debug_audio_interval = debug_audio_interval
-        self.pytgcalls_logs = pytgcalls_logs
-        self.debug_audio_signature = debug_audio_signature
-        self.receive_mode = receive_mode
-        self.file_output_path = file_output_path
-        self._debug_last_log = time.time()
-        self._debug_bytes = 0
-        self._debug_calls = 0
-        self._debug_signature_logged = False
-        self._file_tailer = None
-
-
 class FileAudioTailer:
     def __init__(self, path: str, chunker: AudioChunker, debug_audio: bool = False):
         self.path = path
@@ -125,6 +90,41 @@ class FileAudioTailer:
                 self.chunker.add(audio)
                 if self.debug_audio:
                     print(f"[listener] File tailer read {len(audio)} bytes (offset {self._offset})")
+
+
+class TelegramGroupCallListener:
+    def __init__(
+        self,
+        api_id: int,
+        api_hash: str,
+        session_name: str,
+        session_string: str,
+        chat_target: str,
+        chunker: AudioChunker,
+        debug_audio: bool = False,
+        debug_audio_interval: float = 5.0,
+        pytgcalls_logs: bool = False,
+        debug_audio_signature: bool = False,
+        receive_mode: str = "raw",
+        file_output_path: str = "/tmp/voice_call.wav",
+    ):
+        # Pyrogram 2.x supports session strings via session_string parameter.
+        self.client = Client(session_name, api_id=api_id, api_hash=api_hash, session_string=session_string)
+        self.chat_target = chat_target
+        self.chunker = chunker
+        self.group_call = None
+        self.thread = None
+        self.debug_audio = debug_audio
+        self.debug_audio_interval = debug_audio_interval
+        self.pytgcalls_logs = pytgcalls_logs
+        self.debug_audio_signature = debug_audio_signature
+        self.receive_mode = receive_mode
+        self.file_output_path = file_output_path
+        self._debug_last_log = time.time()
+        self._debug_bytes = 0
+        self._debug_calls = 0
+        self._debug_signature_logged = False
+        self._file_tailer = None
 
     def _on_recorded_data(self, *args, **kwargs):
         # PyTgCalls passes raw PCM bytes; signature differs by version.
