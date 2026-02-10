@@ -1,4 +1,6 @@
 import hashlib
+import math
+import struct
 import time
 
 from listener.bible_fetcher import BibleFetcher, format_for_telegram
@@ -85,7 +87,16 @@ def main() -> None:
             continue
 
         if Settings.debug_audio:
-            print(f"[listener] Processing chunk: {len(chunk)} bytes")
+            sample_count = len(chunk) // 2
+            rms = 0.0
+            if sample_count > 0:
+                samples = struct.unpack("<" + "h" * sample_count, chunk)
+                mean_sq = sum((s * s) for s in samples) / sample_count
+                rms = math.sqrt(mean_sq)
+                dbfs = 20.0 * math.log10(rms / 32768.0) if rms > 0 else -120.0
+                print(f"[listener] Processing chunk: {len(chunk)} bytes, rms={rms:.1f}, dBFS={dbfs:.1f}")
+            else:
+                print(f"[listener] Processing chunk: {len(chunk)} bytes, rms=0.0, dBFS=-120.0")
         transcript = transcriber.transcribe_raw_pcm(
             chunk,
             sample_rate=Settings.sample_rate,
