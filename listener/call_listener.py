@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 import time
 from queue import Queue, Empty
@@ -57,6 +58,8 @@ class TelegramGroupCallListener:
         debug_audio_interval: float = 5.0,
         pytgcalls_logs: bool = False,
         debug_audio_signature: bool = False,
+        receive_mode: str = "raw",
+        file_output_path: str = "/tmp/voice_call.wav",
     ):
         # Pyrogram 2.x supports session strings via session_string parameter.
         self.client = Client(session_name, api_id=api_id, api_hash=api_hash, session_string=session_string)
@@ -68,10 +71,60 @@ class TelegramGroupCallListener:
         self.debug_audio_interval = debug_audio_interval
         self.pytgcalls_logs = pytgcalls_logs
         self.debug_audio_signature = debug_audio_signature
+        self.receive_mode = receive_mode
+        self.file_output_path = file_output_path
         self._debug_last_log = time.time()
         self._debug_bytes = 0
         self._debug_calls = 0
         self._debug_signature_logged = False
+        self._file_tailer = None
+
+
+class FileAudioTailer:
+    def __init__(self, path: str, chunker: AudioChunker, debug_audio: bool = False):
+        self.path = path
+        self.chunker = chunker
+        self.debug_audio = debug_audio
+        self.thread = None
+        self._stop = False
+        self._offset = 0
+        self._header_skipped = False
+
+    def start(self):
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self._stop = True
+
+    def _run(self):
+        while not self._stop:
+            if not os.path.exists(self.path):
+                time.sleep(0.2)
+                continue
+
+            with open(self.path, "rb") as handle:
+                handle.seek(self._offset)
+                data = handle.read()
+
+            if not data:
+                time.sleep(0.2)
+                continue
+
+            audio = data
+            if not self._header_skipped and self.path.endswith(".wav"):
+                if self._offset == 0 and len(data) < 44:
+                    time.sleep(0.2)
+                    continue
+                if self._offset == 0:
+                    audio = data[44:]
+                    self._header_skipped = True
+
+            self._offset += len(data)
+            if audio:
+                self.chunker.add(audio)
+                if self.debug_audio:
+                    print(f"[listener] File tailer read {len(audio)} bytes (offset {self._offset})")
 
     def _on_recorded_data(self, *args, **kwargs):
         # PyTgCalls passes raw PCM bytes; signature differs by version.
@@ -147,7 +200,13 @@ class TelegramGroupCallListener:
         me = await self.client.get_me()
         print(f"[listener] Logged in as {me.id} @{me.username or 'no-username'} (bot={me.is_bot})")
         factory = GroupCallFactory(self.client, enable_logs_to_console=self.pytgcalls_logs)
-        self.group_call = factory.get_raw_group_call(on_recorded_data=self._on_recorded_data)
+        if self.receive_mode == "file":
+            self.group_call = factory.get_file_group_call(output_filename=self.file_output_path)
+            self._file_tailer = FileAudioTailer(self.file_output_path, self.chunker, self.debug_audio)
+            self._file_tailer.start()
+            print(f"[listener] File receive mode enabled -> {self.file_output_path}")
+        else:
+            self.group_call = factory.get_raw_group_call(on_recorded_data=self._on_recorded_data)
 
         chat = await self._resolve_chat(self.chat_target)
         chat_id = chat.id

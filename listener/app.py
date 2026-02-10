@@ -44,6 +44,8 @@ def main() -> None:
         debug_audio_interval=Settings.debug_audio_interval,
         pytgcalls_logs=Settings.pytgcalls_logs,
         debug_audio_signature=Settings.debug_audio_signature,
+        receive_mode=Settings.receive_mode,
+        file_output_path=Settings.file_output_path,
     )
 
     transcriber = WhisperTranscriber(Settings.whisper_model, Settings.whisper_compute_type)

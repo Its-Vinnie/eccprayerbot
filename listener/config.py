@@ -33,6 +33,8 @@ class Settings:
     debug_audio_interval = float(env("LISTENER_DEBUG_AUDIO_INTERVAL_SECONDS", "5"))
     pytgcalls_logs = env("LISTENER_PYTG_LOGS", "true").lower() == "true"
     debug_audio_signature = env("LISTENER_DEBUG_AUDIO_SIGNATURE", "false").lower() == "true"
+    receive_mode = env("LISTENER_RECEIVE_MODE", "raw").lower()
+    file_output_path = env("LISTENER_FILE_OUTPUT_PATH", "/tmp/voice_call.wav")
 
     # Whisper
     whisper_model = env("WHISPER_MODEL", "base.en")
