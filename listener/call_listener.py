@@ -36,23 +36,62 @@ class AudioChunker:
 
 
 class TelegramGroupCallListener:
-    def __init__(self, api_id: int, api_hash: str, session_name: str, session_string: str, chat_target: str, chunker: AudioChunker):
+    def __init__(
+        self,
+        api_id: int,
+        api_hash: str,
+        session_name: str,
+        session_string: str,
+        chat_target: str,
+        chunker: AudioChunker,
+        debug_audio: bool = False,
+        debug_audio_interval: float = 5.0,
+        pytgcalls_logs: bool = False,
+    ):
         # Pyrogram 2.x supports session strings via session_string parameter.
         self.client = Client(session_name, api_id=api_id, api_hash=api_hash, session_string=session_string)
         self.chat_target = chat_target
         self.chunker = chunker
         self.group_call = None
         self.thread = None
+        self.debug_audio = debug_audio
+        self.debug_audio_interval = debug_audio_interval
+        self.pytgcalls_logs = pytgcalls_logs
+        self._debug_last_log = time.time()
+        self._debug_bytes = 0
+        self._debug_calls = 0
 
     def _on_recorded_data(self, *args, **kwargs):
         # PyTgCalls passes raw PCM bytes; signature differs by version.
+        data = None
         for arg in args:
             if isinstance(arg, (bytes, bytearray)):
-                self.chunker.add(bytes(arg))
-                return
-        data = kwargs.get("data")
-        if isinstance(data, (bytes, bytearray)):
-            self.chunker.add(bytes(data))
+                data = bytes(arg)
+                break
+        if data is None:
+            data = kwargs.get("data")
+            if isinstance(data, (bytes, bytearray)):
+                data = bytes(data)
+            else:
+                data = None
+        if data:
+            self.chunker.add(data)
+            if self.debug_audio:
+                self._debug_bytes += len(data)
+                self._debug_calls += 1
+                now = time.time()
+                if now - self._debug_last_log >= self.debug_audio_interval:
+                    queued = self.chunker.queue.qsize()
+                    buf_len = len(self.chunker.buffer)
+                    interval = now - self._debug_last_log
+                    print(
+                        f"[listener] Audio received: {self._debug_bytes} bytes, "
+                        f"{self._debug_calls} callbacks in {interval:.1f}s "
+                        f"(queue {queued}, buffer {buf_len})"
+                    )
+                    self._debug_last_log = now
+                    self._debug_bytes = 0
+                    self._debug_calls = 0
 
     def start(self):
         self.thread = threading.Thread(target=self._run_async, daemon=True)
@@ -63,7 +102,7 @@ class TelegramGroupCallListener:
 
     async def _start_async(self):
         await self.client.start()
-        factory = GroupCallFactory(self.client, enable_logs_to_console=False)
+        factory = GroupCallFactory(self.client, enable_logs_to_console=self.pytgcalls_logs)
         self.group_call = factory.get_raw_group_call(on_recorded_data=self._on_recorded_data)
 
         chat_id = await self._resolve_chat_id(self.chat_target)

@@ -33,6 +33,9 @@ def main() -> None:
         session_string=Settings.tg_session_string,
         chat_target=Settings.target_chat,
         chunker=chunker,
+        debug_audio=Settings.debug_audio,
+        debug_audio_interval=Settings.debug_audio_interval,
+        pytgcalls_logs=Settings.pytgcalls_logs,
     )
 
     transcriber = WhisperTranscriber(Settings.whisper_model, Settings.whisper_compute_type)
