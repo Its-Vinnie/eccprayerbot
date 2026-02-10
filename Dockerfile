@@ -3,8 +3,7 @@
 FROM eclipse-temurin:17-jdk AS build
 WORKDIR /app
 COPY . /app
-RUN --mount=type=cache,id=maven-cache,target=/root/.m2 \
-    ./mvnw -q -DskipTests package
+RUN ./mvnw -q -DskipTests package
 
 FROM python:3.11-slim
 WORKDIR /app
