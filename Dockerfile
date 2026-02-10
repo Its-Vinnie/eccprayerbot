@@ -11,6 +11,7 @@ WORKDIR /app
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    build-essential \
     libopus-dev \
     libgl1 \
     libglib2.0-0 \
