@@ -23,6 +23,7 @@ COPY listener /app/listener
 
 # Python deps
 RUN pip install --no-cache-dir -r /app/listener/requirements.txt
+RUN pip install --no-cache-dir --upgrade --force-reinstall tgcaller==1.0.3
 
 ENV PYTHONUNBUFFERED=1
 
