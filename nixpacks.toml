@@ -5,7 +5,7 @@ nixPkgs = ['maven', 'jdk17', 'python311', 'ffmpeg', 'python311Packages.pip']
 cmds = ['mvn clean package -DskipTests']
 
 [phases.install]
-cmds = ['pip3 install -r listener/requirements.txt']
+cmds = ['pip3 install --no-cache-dir --upgrade --force-reinstall -r listener/requirements.txt']
 
 [start]
 cmd = 'python3 -m listener.app & java -Dserver.port=$PORT $JAVA_OPTS -jar target/prayer-bot-1.0.0-MVP.jar'

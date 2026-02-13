@@ -124,7 +124,12 @@ class TelegramGroupCallListener:
         print(f"[listener] Logged in as {me.id} @{me.username or 'no-username'} (bot={me.is_bot})")
 
         self._caller = TgCaller(self.client)
-        self._register_plugin(self._caller, self._plugin)
+        self._log_tgcaller_capabilities()
+        if not self._register_plugin(self._caller, self._plugin):
+            print(
+                "[listener] TgCaller plugin system not available; audio capture disabled. "
+                "Verify tgcaller install/version."
+            )
         await self._caller.start()
 
         chat = await self._resolve_chat(self.chat_target)
@@ -155,20 +160,48 @@ class TelegramGroupCallListener:
                 await asyncio.sleep(delay)
         raise RuntimeError("Failed to join group call after retries")
 
+    def _log_tgcaller_capabilities(self) -> None:
+        try:
+            import tgcaller as _tgcaller  # local import to avoid startup failures
+
+            version = getattr(_tgcaller, "__version__", "unknown")
+            attrs = [
+                name
+                for name in (
+                    "register_plugin",
+                    "add_plugin",
+                    "plugins",
+                    "plugin_manager",
+                    "on_audio_frame",
+                )
+                if hasattr(TgCaller, name)
+            ]
+            print(f"[listener] tgcaller version={version} TgCaller attrs={attrs}")
+        except Exception as exc:
+            print(f"[listener] Failed to inspect tgcaller: {type(exc).__name__}: {exc}")
+
     @staticmethod
-    def _register_plugin(caller: TgCaller, plugin: BasePlugin) -> None:
+    def _register_plugin(caller: TgCaller, plugin: BasePlugin) -> bool:
         if hasattr(caller, "register_plugin"):
             caller.register_plugin(plugin)
-            return
+            return True
         if hasattr(caller, "add_plugin"):
             caller.add_plugin(plugin)
-            return
+            return True
         plugins = getattr(caller, "plugins", None)
         if plugins is not None:
             if hasattr(plugins, "register"):
                 plugins.register(plugin)
-                return
+                return True
             if hasattr(plugins, "add"):
                 plugins.add(plugin)
-                return
-        raise RuntimeError("TgCaller plugin system not available; cannot capture audio frames")
+                return True
+        plugin_manager = getattr(caller, "plugin_manager", None)
+        if plugin_manager is not None:
+            if hasattr(plugin_manager, "register"):
+                plugin_manager.register(plugin)
+                return True
+            if hasattr(plugin_manager, "add"):
+                plugin_manager.add(plugin)
+                return True
+        return False
