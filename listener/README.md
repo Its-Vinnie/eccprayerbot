@@ -69,6 +69,10 @@ Example JSONL:
 2. `LISTENER_CHAT` can be a username, `t.me/...`, or a numeric chat id.
 3. If the transcript doesn't include a translation, it defaults to `DEFAULT_TRANSLATION`.
 4. When paraphrase confidence is low, it sends 2-3 possible matches.
+5. To run the listener as a TCP audio sink (Java bridge mode) set `LISTENER_AUDIO_SOURCE=bridge` and point `LISTENER_AUDIO_HOST`/`LISTENER_AUDIO_PORT` to the bridge server.
+
+### Audio Bridge Mode
+When `LISTENER_AUDIO_SOURCE=bridge` the listener opens a small TCP server (`LISTENER_AUDIO_HOST`, `LISTENER_AUDIO_PORT`, default `127.0.0.1:5045`) and waits for length-prefixed PCM chunks from the Java bridge. The Java process is responsible for joining the Telegram group call, demultiplexing the video/audio stream, and piping raw PCM to this socket. Set `LISTENER_AUDIO_SOURCE=tgcaller` (or omit it) to use the built-in Pyrogram/TgCaller listener as before.
 
 ### KJV Source
 We use the public-domain KJV JSON mapping from:

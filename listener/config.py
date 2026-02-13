@@ -35,6 +35,10 @@ class Settings:
     debug_audio_signature = env("LISTENER_DEBUG_AUDIO_SIGNATURE", "false").lower() == "true"
     receive_mode = env("LISTENER_RECEIVE_MODE", "raw").lower()
     file_output_path = env("LISTENER_FILE_OUTPUT_PATH", "/tmp/voice_call.wav")
+    audio_source = env("LISTENER_AUDIO_SOURCE", "tgcaller").lower()
+    audio_bridge_host = env("LISTENER_AUDIO_HOST", "127.0.0.1")
+    audio_bridge_port = int(env("LISTENER_AUDIO_PORT", "5045"))
+    audio_bridge_reconnect_seconds = float(env("LISTENER_AUDIO_RECONNECT_SECONDS", "5"))
 
     # Whisper
     whisper_model = env("WHISPER_MODEL", "base.en")
@@ -61,12 +65,17 @@ class Settings:
     @classmethod
     def validate(cls) -> None:
         required = {
-            "TG_API_ID": cls.tg_api_id,
-            "TG_API_HASH": cls.tg_api_hash,
-            "TG_SESSION_STRING": cls.tg_session_string,
             "TELEGRAM_BOT_TOKEN": cls.bot_token,
             "LISTENER_CHAT": cls.target_chat,
         }
+        if cls.audio_source != "bridge":
+            required.update(
+                {
+                    "TG_API_ID": cls.tg_api_id,
+                    "TG_API_HASH": cls.tg_api_hash,
+                    "TG_SESSION_STRING": cls.tg_session_string,
+                }
+            )
         missing = [k for k, v in required.items() if not v]
         if missing:
             raise RuntimeError(f"Missing required env vars: {', '.join(missing)}")

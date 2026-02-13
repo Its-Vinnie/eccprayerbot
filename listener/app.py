@@ -4,6 +4,7 @@ import struct
 import time
 
 from listener.bible_fetcher import BibleFetcher, format_for_telegram
+from listener.audio_bridge import AudioBridgeServer
 from listener.call_listener import AudioChunker, TelegramGroupCallListener
 from listener.config import Settings
 from listener.matcher import VerseMatcher
@@ -33,20 +34,30 @@ def main() -> None:
         channels=Settings.channels,
         debug_audio=Settings.debug_audio,
     )
-    listener = TelegramGroupCallListener(
-        api_id=int(Settings.tg_api_id),
-        api_hash=Settings.tg_api_hash,
-        session_name=Settings.tg_session_name,
-        session_string=Settings.tg_session_string,
-        chat_target=Settings.target_chat,
-        chunker=chunker,
-        debug_audio=Settings.debug_audio,
-        debug_audio_interval=Settings.debug_audio_interval,
-        pytgcalls_logs=Settings.pytgcalls_logs,
-        debug_audio_signature=Settings.debug_audio_signature,
-        receive_mode=Settings.receive_mode,
-        file_output_path=Settings.file_output_path,
-    )
+    bridge_server = None
+    if Settings.audio_source == "bridge":
+        bridge_server = AudioBridgeServer(
+            chunker,
+            host=Settings.audio_bridge_host,
+            port=Settings.audio_bridge_port,
+            reconnect_seconds=Settings.audio_bridge_reconnect_seconds,
+        )
+        bridge_server.start()
+    else:
+        listener = TelegramGroupCallListener(
+            api_id=int(Settings.tg_api_id),
+            api_hash=Settings.tg_api_hash,
+            session_name=Settings.tg_session_name,
+            session_string=Settings.tg_session_string,
+            chat_target=Settings.target_chat,
+            chunker=chunker,
+            debug_audio=Settings.debug_audio,
+            debug_audio_interval=Settings.debug_audio_interval,
+            pytgcalls_logs=Settings.pytgcalls_logs,
+            debug_audio_signature=Settings.debug_audio_signature,
+            receive_mode=Settings.receive_mode,
+            file_output_path=Settings.file_output_path,
+        )
 
     transcriber = WhisperTranscriber(Settings.whisper_model, Settings.whisper_compute_type)
 
