@@ -5,7 +5,7 @@ WORKDIR /app
 COPY . /app
 RUN ./mvnw -q -DskipTests package
 
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 WORKDIR /app
 
 # System deps
