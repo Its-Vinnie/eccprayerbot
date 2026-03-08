@@ -171,7 +171,11 @@ public class BibleService {
                 if (combinedText.length() > 0) {
                     combinedText.append(" ");
                 }
-                combinedText.append("[").append(verseNum).append("] ").append(fetched.getText().trim());
+                // Strip any existing leading verse number (e.g. "[1] " or "1 ") to avoid duplication
+                String verseText = fetched.getText().trim()
+                        .replaceAll("^\\[\\d+(?:-\\d+)?\\]\\s*", "")
+                        .replaceAll("^\\d+\\s+", "");
+                combinedText.append("[").append(verseNum).append("] ").append(verseText);
             }
         }
 
