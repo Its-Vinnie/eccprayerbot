@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -138,6 +139,55 @@ public class BibleService {
 
     private boolean isCacheableTranslation(String translation) {
         return CACHEABLE_TRANSLATIONS.contains(translation.toUpperCase());
+    }
+
+    /**
+     * Get multiple specific verses (e.g., Rom 8:1,3,7) and combine them into a single BibleVerse.
+     * Verses are fetched individually and returned in numerical order.
+     */
+    public BibleVerse getSpecificVerses(BibleReference reference) {
+        List<Integer> verses = new ArrayList<>(reference.getSpecificVerses());
+        verses.sort(Integer::compareTo);
+
+        StringBuilder combinedText = new StringBuilder();
+        String translation = null;
+        String versionName = null;
+
+        for (Integer verseNum : verses) {
+            BibleReference singleRef = BibleReference.builder()
+                    .book(reference.getBook())
+                    .chapter(reference.getChapter())
+                    .verseStart(verseNum)
+                    .verseEnd(null)
+                    .translation(reference.getTranslation())
+                    .build();
+
+            BibleVerse fetched = getVerse(singleRef);
+            if (fetched != null && fetched.getText() != null && !fetched.getText().isBlank()) {
+                if (translation == null) {
+                    translation = fetched.getTranslation();
+                    versionName = fetched.getVersionName();
+                }
+                if (combinedText.length() > 0) {
+                    combinedText.append(" ");
+                }
+                combinedText.append("[").append(verseNum).append("] ").append(fetched.getText().trim());
+            }
+        }
+
+        if (combinedText.length() == 0) {
+            return null;
+        }
+
+        return BibleVerse.builder()
+                .reference(reference.toDisplayString())
+                .text(combinedText.toString())
+                .translation(translation)
+                .versionName(versionName)
+                .book(reference.getBook())
+                .chapter(reference.getChapter())
+                .fetchedAt(java.time.LocalDateTime.now())
+                .build();
     }
 
     /**

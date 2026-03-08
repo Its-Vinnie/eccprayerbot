@@ -5,7 +5,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,9 +31,10 @@ public class BibleReferenceParser {
     // - Book Chapter (Whole chapter)
     // - Book Chapter:Verse (Single verse)
     // - Book Chapter:Verse-Verse (Verse range)
+    // - Book Chapter:Verse,Verse,Verse (Specific verses)
     // - Book Chapter:Verse Translation (With translation)
     private static final Pattern BIBLE_REF_PATTERN = Pattern.compile(
-            "(?i)(\\d?\\s*[a-z]+(?:\\s+[a-z]+)?)\\s+(\\d+)(?::(\\d+)(?:-(\\d+))?)?(?:\\s+([a-z0-9]{2,10}))?",
+            "(?i)(\\d?\\s*[a-z]+(?:\\s+[a-z]+)?)\\s+(\\d+)(?::(\\d+(?:,\\d+)*)(?:-(\\d+))?)?(?:\\s+([a-z0-9]{2,10}))?",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -139,7 +142,7 @@ public class BibleReferenceParser {
         try {
             String bookRaw = matcher.group(1).trim();
             String chapterStr = matcher.group(2);
-            String verseStartStr = matcher.group(3);
+            String verseGroup = matcher.group(3);  // Could be "1" or "1,3,7"
             String verseEndStr = matcher.group(4);
             String translation = matcher.group(5);
 
@@ -151,12 +154,33 @@ public class BibleReferenceParser {
                 translation = translation.trim().toUpperCase();
             }
 
+            // Parse verse numbers - handle comma-separated specific verses
+            Integer verseStart = null;
+            Integer verseEnd = verseEndStr != null ? Integer.parseInt(verseEndStr) : null;
+            List<Integer> specificVerses = null;
+
+            if (verseGroup != null) {
+                if (verseGroup.contains(",")) {
+                    // Comma-separated verses like "1,3,7"
+                    specificVerses = new ArrayList<>();
+                    for (String v : verseGroup.split(",")) {
+                        specificVerses.add(Integer.parseInt(v.trim()));
+                    }
+                    // Sort them for ordered display
+                    specificVerses.sort(Integer::compareTo);
+                    verseStart = specificVerses.get(0);
+                } else {
+                    verseStart = Integer.parseInt(verseGroup);
+                }
+            }
+
             BibleReference reference = BibleReference.builder()
                     .book(book)
                     .chapter(Integer.parseInt(chapterStr))
-                    .verseStart(verseStartStr != null ? Integer.parseInt(verseStartStr) : null)
-                    .verseEnd(verseEndStr != null ? Integer.parseInt(verseEndStr) : null)
+                    .verseStart(verseStart)
+                    .verseEnd(verseEnd)
                     .translation(translation != null && !translation.isEmpty() ? translation : "KJV")
+                    .specificVerses(specificVerses)
                     .build();
 
             if (!reference.isValid()) {

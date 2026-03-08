@@ -150,8 +150,13 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
                 return;
             }
 
-            // Fetch verse
-            BibleVerse verse = bibleService.getVerse(reference);
+            // Fetch verse(s)
+            BibleVerse verse;
+            if (reference.hasSpecificVerses()) {
+                verse = bibleService.getSpecificVerses(reference);
+            } else {
+                verse = bibleService.getVerse(reference);
+            }
 
             if (verse == null || verse.getText() == null) {
                 handleFetchFailure(chatId, reference, startTime, request);
@@ -193,7 +198,12 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             BibleReference reference = referenceParser.parse(queryText);
 
             if (reference != null) {
-                BibleVerse verse = bibleService.getVerse(reference);
+                BibleVerse verse;
+                if (reference.hasSpecificVerses()) {
+                    verse = bibleService.getSpecificVerses(reference);
+                } else {
+                    verse = bibleService.getVerse(reference);
+                }
 
                 if (verse != null && verse.getText() != null) {
                     List<InlineQueryResult> results = new ArrayList<>();

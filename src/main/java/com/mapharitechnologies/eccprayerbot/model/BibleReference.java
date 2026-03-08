@@ -1,5 +1,8 @@
 package com.mapharitechnologies.eccprayerbot.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Represents a parsed Bible reference (e.g., "John 3:16")
  */
@@ -10,6 +13,7 @@ public class BibleReference {
     private Integer verseStart;    // e.g., 16
     private Integer verseEnd;      // e.g., 18 (optional for ranges)
     private String translation;    // e.g., "KJV", "NIV" (optional)
+    private List<Integer> specificVerses;  // e.g., [1, 3, 7] for "Rom 8:1,3,7"
 
     public BibleReference() {
     }
@@ -20,6 +24,15 @@ public class BibleReference {
         this.verseStart = verseStart;
         this.verseEnd = verseEnd;
         this.translation = translation;
+    }
+
+    public BibleReference(String book, Integer chapter, Integer verseStart, Integer verseEnd, String translation, List<Integer> specificVerses) {
+        this.book = book;
+        this.chapter = chapter;
+        this.verseStart = verseStart;
+        this.verseEnd = verseEnd;
+        this.translation = translation;
+        this.specificVerses = specificVerses;
     }
 
     public static BibleReferenceBuilder builder() {
@@ -66,12 +79,25 @@ public class BibleReference {
         this.translation = translation;
     }
 
+    public List<Integer> getSpecificVerses() {
+        return specificVerses;
+    }
+
+    public void setSpecificVerses(List<Integer> specificVerses) {
+        this.specificVerses = specificVerses;
+    }
+
+    public boolean hasSpecificVerses() {
+        return specificVerses != null && specificVerses.size() > 1;
+    }
+
     public static class BibleReferenceBuilder {
         private String book;
         private Integer chapter;
         private Integer verseStart;
         private Integer verseEnd;
         private String translation;
+        private List<Integer> specificVerses;
 
         public BibleReferenceBuilder book(String book) {
             this.book = book;
@@ -98,8 +124,13 @@ public class BibleReference {
             return this;
         }
 
+        public BibleReferenceBuilder specificVerses(List<Integer> specificVerses) {
+            this.specificVerses = specificVerses;
+            return this;
+        }
+
         public BibleReference build() {
-            return new BibleReference(book, chapter, verseStart, verseEnd, translation);
+            return new BibleReference(book, chapter, verseStart, verseEnd, translation, specificVerses);
         }
     }
 
@@ -110,12 +141,19 @@ public class BibleReference {
         StringBuilder key = new StringBuilder()
                 .append(book.toLowerCase().replaceAll("\\s+", ""))
                 .append("-")
-                .append(chapter)
-                .append("-")
-                .append(verseStart);
+                .append(chapter);
 
-        if (verseEnd != null && !verseEnd.equals(verseStart)) {
-            key.append("-").append(verseEnd);
+        if (hasSpecificVerses()) {
+            List<Integer> sorted = new ArrayList<>(specificVerses);
+            sorted.sort(Integer::compareTo);
+            for (Integer v : sorted) {
+                key.append("-").append(v);
+            }
+        } else {
+            key.append("-").append(verseStart);
+            if (verseEnd != null && !verseEnd.equals(verseStart)) {
+                key.append("-").append(verseEnd);
+            }
         }
 
         if (translation != null) {
@@ -134,7 +172,15 @@ public class BibleReference {
                 .append(" ")
                 .append(chapter);
 
-        if (verseStart != null) {
+        if (hasSpecificVerses()) {
+            display.append(":");
+            List<Integer> sorted = new ArrayList<>(specificVerses);
+            sorted.sort(Integer::compareTo);
+            for (int i = 0; i < sorted.size(); i++) {
+                if (i > 0) display.append(",");
+                display.append(sorted.get(i));
+            }
+        } else if (verseStart != null) {
             display.append(":").append(verseStart);
 
             if (verseEnd != null && !verseEnd.equals(verseStart)) {

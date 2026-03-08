@@ -2,6 +2,9 @@ package com.mapharitechnologies.eccprayerbot.util;
 
 import com.mapharitechnologies.eccprayerbot.model.BibleReference;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class BibleReferenceParserTest {
@@ -64,5 +67,55 @@ class BibleReferenceParserTest {
         ref = parser.parse("John 3:16 NiV");
         assertNotNull(ref);
         assertEquals("NIV", ref.getTranslation(), "Should handle mixed case");
+    }
+
+    @Test
+    void testParseSpecificVerses() {
+        BibleReference ref = parser.parse("Rom 8:1,3,7");
+        assertNotNull(ref);
+        assertEquals("Romans", ref.getBook());
+        assertEquals(8, ref.getChapter());
+        assertTrue(ref.hasSpecificVerses());
+        assertEquals(List.of(1, 3, 7), ref.getSpecificVerses());
+        assertEquals("KJV", ref.getTranslation());
+    }
+
+    @Test
+    void testParseSpecificVersesWithTranslation() {
+        BibleReference ref = parser.parse("John 1:5,6,10 NIV");
+        assertNotNull(ref);
+        assertEquals("John", ref.getBook());
+        assertEquals(1, ref.getChapter());
+        assertTrue(ref.hasSpecificVerses());
+        assertEquals(List.of(5, 6, 10), ref.getSpecificVerses());
+        assertEquals("NIV", ref.getTranslation());
+    }
+
+    @Test
+    void testParseSpecificVersesOutOfOrder() {
+        BibleReference ref = parser.parse("John 1:10,5,6");
+        assertNotNull(ref);
+        assertTrue(ref.hasSpecificVerses());
+        // Should be sorted
+        assertEquals(List.of(5, 6, 10), ref.getSpecificVerses());
+        assertEquals("John 1:5,6,10", ref.toDisplayString());
+    }
+
+    @Test
+    void testParseSpecificVersesTwoVerses() {
+        BibleReference ref = parser.parse("Genesis 1:1,3");
+        assertNotNull(ref);
+        assertEquals("Genesis", ref.getBook());
+        assertEquals(1, ref.getChapter());
+        assertTrue(ref.hasSpecificVerses());
+        assertEquals(List.of(1, 3), ref.getSpecificVerses());
+    }
+
+    @Test
+    void testSingleVerseHasNoSpecificVerses() {
+        BibleReference ref = parser.parse("John 3:16");
+        assertNotNull(ref);
+        assertFalse(ref.hasSpecificVerses());
+        assertNull(ref.getSpecificVerses());
     }
 }
