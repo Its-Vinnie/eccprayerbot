@@ -114,13 +114,9 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             return;
         }
 
-        boolean directTrigger = isDirectTrigger(messageText);
-
-        // If not a direct trigger, try to detect a bare Bible reference
-        if (!directTrigger) {
-            if (!referenceParser.containsReference(messageText)) {
-                return;
-            }
+        // Only respond to direct triggers (@mention, /get, /find, get, find)
+        if (!isDirectTrigger(messageText)) {
+            return;
         }
 
         logger.info("Verse request in chat {}: {}", chatId, messageText);
@@ -143,10 +139,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             BibleReference reference = referenceParser.parse(messageText);
 
             if (reference == null) {
-                // Only send error messages for direct triggers, not bare references
-                if (directTrigger) {
-                    handleInvalidReference(chatId, startTime, request);
-                }
+                handleInvalidReference(chatId, startTime, request);
                 return;
             }
 
