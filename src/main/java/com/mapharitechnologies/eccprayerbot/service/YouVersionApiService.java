@@ -37,7 +37,6 @@ public class YouVersionApiService {
         VERSION_MAPPINGS.put("TPT", "1849");
         VERSION_MAPPINGS.put("AMP", "1588");
         VERSION_MAPPINGS.put("NLT", "116");
-        VERSION_MAPPINGS.put("ESV", "59");
         VERSION_MAPPINGS.put("MSG", "97");
         VERSION_MAPPINGS.put("NKJV", "114");
     }

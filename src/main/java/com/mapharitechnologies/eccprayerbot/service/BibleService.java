@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -21,6 +22,7 @@ public class BibleService {
 
     private final YouVersionApiService youVersionApiService;
     private final ApiBibleService apiBibleService;
+    private final EsvApiService esvApiService;
     private final Optional<BibleVerseRepository> verseRepository;
 
     private static final Set<String> CACHEABLE_TRANSLATIONS = Set.of(
@@ -29,9 +31,11 @@ public class BibleService {
 
     public BibleService(YouVersionApiService youVersionApiService,
                         ApiBibleService apiBibleService,
+                        EsvApiService esvApiService,
                         Optional<BibleVerseRepository> verseRepository) {
         this.youVersionApiService = youVersionApiService;
         this.apiBibleService = apiBibleService;
+        this.esvApiService = esvApiService;
         this.verseRepository = verseRepository;
     }
 
@@ -52,7 +56,9 @@ public class BibleService {
         log.debug("Verse not in cache, fetching from API");
         BibleVerse verse;
         String translation = reference.getTranslation();
-        if (apiBibleService.isSupported(translation)) {
+        if (esvApiService.isSupported(translation)) {
+            verse = esvApiService.fetchVerse(reference);
+        } else if (apiBibleService.isSupported(translation)) {
             if (translation == null) {
                 // If no translation specified, create a new reference with default KJV for API.Bible
                 BibleReference kjvRef = BibleReference.builder()
@@ -135,9 +141,17 @@ public class BibleService {
     }
 
     /**
+     * Search for Bible verses by text content (quotes, paraphrases, keywords)
+     */
+    public List<BibleVerse> searchVerses(String query) {
+        log.debug("Searching for verses matching: {}", query);
+        return apiBibleService.searchVerses(query);
+    }
+
+    /**
      * Check if the service is healthy
      */
     public boolean isHealthy() {
-        return youVersionApiService.isApiAvailable() || apiBibleService.isApiAvailable();
+        return youVersionApiService.isApiAvailable() || apiBibleService.isApiAvailable() || esvApiService.isApiAvailable();
     }
 }

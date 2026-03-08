@@ -1,7 +1,0 @@
-pyrogram==2.0.106
-tgcaller==1.0.3
-tgcrypto==1.2.5
-requests==2.32.3
-faster-whisper==1.0.3
-numpy==1.26.4
-sentence-transformers==2.7.0

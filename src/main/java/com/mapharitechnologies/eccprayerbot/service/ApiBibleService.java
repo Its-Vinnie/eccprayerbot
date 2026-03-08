@@ -13,7 +13,9 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -240,6 +242,66 @@ public class ApiBibleService {
                 .versionName(versionName)
                 .fetchedAt(LocalDateTime.now())
                 .build();
+    }
+
+    /**
+     * Search for Bible verses by text content (quotes, paraphrases, keywords)
+     */
+    @CircuitBreaker(name = "apiBible", fallbackMethod = "searchVersesFallback")
+    public List<BibleVerse> searchVerses(String query) {
+        log.debug("Searching API.Bible for: {}", query);
+
+        String versionId = defaultVersionId;
+
+        JsonNode response = this.webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/bibles/{bibleId}/search")
+                        .queryParam("query", query)
+                        .queryParam("limit", 5)
+                        .build(versionId))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block(Duration.ofMillis(timeoutMs));
+
+        if (response == null) {
+            log.warn("Null response from API.Bible search for: {}", query);
+            return List.of();
+        }
+
+        JsonNode verses = response.path("data").path("verses");
+        if (!verses.isArray() || verses.isEmpty()) {
+            log.debug("No search results for: {}", query);
+            return List.of();
+        }
+
+        List<BibleVerse> results = new ArrayList<>();
+        for (JsonNode verseNode : verses) {
+            String ref = verseNode.path("reference").asText("");
+            String text = verseNode.path("text").asText("");
+            String bookId = verseNode.path("bookId").asText("");
+
+            if (ref.isEmpty() || text.isEmpty()) continue;
+
+            // Clean up the text
+            text = text.replaceAll("\\s+", " ").trim();
+
+            results.add(BibleVerse.builder()
+                    .reference(ref)
+                    .text(text)
+                    .translation("KJV")
+                    .versionName("KJV")
+                    .fetchedAt(LocalDateTime.now())
+                    .build());
+        }
+
+        log.debug("Found {} search results for: {}", results.size(), query);
+        return results;
+    }
+
+    public List<BibleVerse> searchVersesFallback(String query, Throwable throwable) {
+        log.error("API.Bible search fallback triggered for query: {}. Error: {}",
+                query, throwable.getMessage());
+        return List.of();
     }
 
     public boolean isApiAvailable() {

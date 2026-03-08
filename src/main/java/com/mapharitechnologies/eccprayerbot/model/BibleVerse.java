@@ -197,15 +197,14 @@ public class BibleVerse {
     public String formatForTelegram() {
         StringBuilder formatted = new StringBuilder();
 
-        // Reference (Full Version Name) in bold
-        // Use HTML markers because we're using <b> for verses
+        // Header: Book Chapter:Verse (Translation) 📖
         formatted.append("<b>").append(reference);
         if (versionName != null && !versionName.isBlank()) {
             formatted.append(" (").append(versionName).append(")");
         } else if (translation != null && !translation.isBlank()) {
             formatted.append(" (").append(translation).append(")");
         }
-        formatted.append("</b>\n\n");
+        formatted.append("</b> \uD83D\uDCD6\n\n");
 
         // Verse text - clean up and format
         String cleanedText = cleanText(text);
@@ -215,29 +214,24 @@ public class BibleVerse {
     }
 
     /**
-     * Cleans and formats the verse text
+     * Cleans and formats the verse text into readable paragraphs
      */
     private String cleanText(String rawText) {
         if (rawText == null || rawText.isBlank()) return "";
 
-        // API.Bible now provides verse numbers in <b>1</b> format from ApiBibleService
-        // We want to preserve those, so we don't strip them anymore.
         String cleaned = rawText;
 
-        // If it still has [1] brackets (e.g. from YouVersion or if ApiBible formatting changed), convert them to <b>1</b>
-        cleaned = cleaned.replaceAll("\\[(\\d+)\\]", "<b>$1</b> ");
+        // Convert bracket verse numbers to bold: [1], [5-10], [11-13], etc.
+        cleaned = cleaned.replaceAll("\\[(\\d+(?:-\\d+)?)\\]", "<b>$1</b> ");
 
-        // 2. Handle paragraphs: API.Bible might use multiple newlines or specific markers
-        // Let's normalize multiple newlines to double newlines (standard paragraph break)
-        cleaned = cleaned.replaceAll("\\n{2,}", "\n\n");
+        // Collapse all newlines and excess whitespace into single spaces for a clean paragraph
+        cleaned = cleaned.replaceAll("\\s+", " ");
 
-        // 3. Normalize other whitespace (replace multiple spaces with single one, but preserve single newlines if any)
-        cleaned = cleaned.replaceAll("[ \\t\\x0B\\f\\r]{2,}", " ");
+        // Add two line breaks before each verse number (except the very first one)
+        // Handles single <b>2</b> and range <b>5-10</b> formats
+        cleaned = cleaned.replaceAll("(?<!^)\\s*(<b>\\d+(?:-\\d+)?</b>)", "\n\n$1");
 
-        // 4. Clean up spaces around newlines
-        cleaned = cleaned.replaceAll(" ?\\n ?", "\n");
-
-        // 5. Trim
+        // Trim
         cleaned = cleaned.trim();
 
         return cleaned;

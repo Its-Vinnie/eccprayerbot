@@ -10,15 +10,21 @@ import com.mapharitechnologies.eccprayerbot.util.MessageSplitter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.methods.updates.DeleteWebhook;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResult;
+import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResultArticle;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -76,6 +82,12 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        // Handle inline queries
+        if (update.hasInlineQuery()) {
+            handleInlineQuery(update.getInlineQuery());
+            return;
+        }
+
         Message message = null;
         if (update.hasMessage()) {
             message = update.getMessage();
@@ -87,17 +99,31 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             return;
         }
 
+        // Skip messages sent via this bot's inline mode to avoid duplicate responses
+        if (message.getViaBot() != null && botUsername.equalsIgnoreCase(message.getViaBot().getUserName())) {
+            return;
+        }
+
         String messageText = message.getText();
         Long chatId = message.getChatId();
         User user = message.getFrom();
 
-        // CRITICAL: Only respond when bot is mentioned
-        if (!isBotMentioned(messageText)) {
-            logger.debug("Bot not mentioned, ignoring message in chat {}", chatId);
+        // Handle /search command
+        if (isSearchCommand(messageText)) {
+            handleSearchCommand(chatId, messageText, user);
             return;
         }
 
-        logger.info("Bot mentioned in chat {}: {}", chatId, messageText);
+        boolean directTrigger = isDirectTrigger(messageText);
+
+        // If not a direct trigger, try to detect a bare Bible reference
+        if (!directTrigger) {
+            if (!referenceParser.containsReference(messageText)) {
+                return;
+            }
+        }
+
+        logger.info("Verse request in chat {}: {}", chatId, messageText);
 
         // Start timing
         long startTime = System.currentTimeMillis();
@@ -117,7 +143,10 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             BibleReference reference = referenceParser.parse(messageText);
 
             if (reference == null) {
-                handleInvalidReference(chatId, startTime, request);
+                // Only send error messages for direct triggers, not bare references
+                if (directTrigger) {
+                    handleInvalidReference(chatId, startTime, request);
+                }
                 return;
             }
 
@@ -145,13 +174,274 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     }
 
     /**
-     * Check if bot is mentioned in the message
+     * Handle inline queries - users type @botusername followed by a Bible reference
      */
-    private boolean isBotMentioned(String messageText) {
+    private void handleInlineQuery(InlineQuery inlineQuery) {
+        String queryText = inlineQuery.getQuery().trim();
+
+        if (queryText.isEmpty()) {
+            answerInlineWithHint(inlineQuery.getId());
+            return;
+        }
+
+        logger.info("Inline query from user {}: {}", inlineQuery.getFrom().getId(), queryText);
+
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // First try parsing as a Bible reference (e.g. "John 3:16")
+            BibleReference reference = referenceParser.parse(queryText);
+
+            if (reference != null) {
+                BibleVerse verse = bibleService.getVerse(reference);
+
+                if (verse != null && verse.getText() != null) {
+                    List<InlineQueryResult> results = new ArrayList<>();
+                    results.add(buildInlineArticle(verse, "ref_" + reference.toDisplayString().hashCode()));
+
+                    AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                            .inlineQueryId(inlineQuery.getId())
+                            .results(results)
+                            .cacheTime(300)
+                            .isPersonal(false)
+                            .build();
+                    execute(answer);
+
+                    long responseTime = System.currentTimeMillis() - startTime;
+                    logger.info("Inline query answered for {} in {}ms", reference.toDisplayString(), responseTime);
+                    return;
+                }
+            }
+
+            // Not a reference or verse not found — try text search
+            if (queryText.length() >= 3) {
+                handleInlineSearch(inlineQuery.getId(), queryText, startTime);
+            } else {
+                answerInlineWithHint(inlineQuery.getId());
+            }
+
+        } catch (Exception e) {
+            logger.error("Error handling inline query: {}", queryText, e);
+            try {
+                AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                        .inlineQueryId(inlineQuery.getId())
+                        .results(new ArrayList<>())
+                        .cacheTime(5)
+                        .build();
+                execute(answer);
+            } catch (TelegramApiException ex) {
+                logger.error("Failed to send empty inline answer", ex);
+            }
+        }
+    }
+
+    /**
+     * Handle inline text search — find verses matching a quote or paraphrase
+     */
+    private void handleInlineSearch(String inlineQueryId, String query, long startTime) {
+        try {
+            List<BibleVerse> searchResults = bibleService.searchVerses(query);
+
+            if (searchResults.isEmpty()) {
+                AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                        .inlineQueryId(inlineQueryId)
+                        .results(new ArrayList<>())
+                        .switchPmText("No verses found for: " + truncate(query, 40))
+                        .switchPmParameter("search")
+                        .cacheTime(60)
+                        .isPersonal(false)
+                        .build();
+                execute(answer);
+                return;
+            }
+
+            List<InlineQueryResult> results = new ArrayList<>();
+            for (int i = 0; i < searchResults.size(); i++) {
+                BibleVerse verse = searchResults.get(i);
+                results.add(buildInlineArticle(verse, "search_" + i + "_" + query.hashCode()));
+            }
+
+            AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                    .inlineQueryId(inlineQueryId)
+                    .results(results)
+                    .cacheTime(300)
+                    .isPersonal(false)
+                    .build();
+            execute(answer);
+
+            long responseTime = System.currentTimeMillis() - startTime;
+            logger.info("Inline search returned {} results for '{}' in {}ms",
+                    results.size(), query, responseTime);
+
+        } catch (Exception e) {
+            logger.error("Error in inline search for: {}", query, e);
+            try {
+                AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                        .inlineQueryId(inlineQueryId)
+                        .results(new ArrayList<>())
+                        .cacheTime(5)
+                        .build();
+                execute(answer);
+            } catch (TelegramApiException ex) {
+                logger.error("Failed to send empty inline answer", ex);
+            }
+        }
+    }
+
+    /**
+     * Build an InlineQueryResultArticle from a BibleVerse
+     */
+    private InlineQueryResultArticle buildInlineArticle(BibleVerse verse, String id) {
+        InputTextMessageContent messageContent = new InputTextMessageContent();
+        messageContent.setMessageText(verse.formatForTelegram());
+        messageContent.setParseMode("HTML");
+        messageContent.setDisableWebPagePreview(true);
+
+        InlineQueryResultArticle article = new InlineQueryResultArticle();
+        article.setId(id);
+        article.setTitle(verse.getReference());
+        article.setDescription(truncate(verse.getText(), 150));
+        article.setInputMessageContent(messageContent);
+        return article;
+    }
+
+    /**
+     * Answer inline query with a usage hint when no valid reference is detected
+     */
+    private void answerInlineWithHint(String inlineQueryId) {
+        try {
+            AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                    .inlineQueryId(inlineQueryId)
+                    .results(new ArrayList<>())
+                    .switchPmText("Type a reference e.g. John 3:16")
+                    .switchPmParameter("help")
+                    .cacheTime(300)
+                    .isPersonal(false)
+                    .build();
+
+            execute(answer);
+        } catch (TelegramApiException e) {
+            logger.error("Failed to send inline hint", e);
+        }
+    }
+
+    /**
+     * Answer inline query when a verse couldn't be found
+     */
+    private void answerInlineEmpty(String inlineQueryId, String reference) {
+        try {
+            AnswerInlineQuery answer = AnswerInlineQuery.builder()
+                    .inlineQueryId(inlineQueryId)
+                    .results(new ArrayList<>())
+                    .switchPmText("Verse not found: " + reference)
+                    .switchPmParameter("not_found")
+                    .cacheTime(30)
+                    .isPersonal(false)
+                    .build();
+
+            execute(answer);
+        } catch (TelegramApiException e) {
+            logger.error("Failed to send empty inline answer for {}", reference, e);
+        }
+    }
+
+    /**
+     * Truncate text to a max length for inline result descriptions
+     */
+    private String truncate(String text, int maxLength) {
+        if (text == null) return "";
+        // Strip any HTML tags for the description
+        String plain = text.replaceAll("<[^>]+>", "").replaceAll("\\s+", " ").trim();
+        if (plain.length() <= maxLength) return plain;
+        return plain.substring(0, maxLength - 3) + "...";
+    }
+
+    /**
+     * Check if the message is a /search command
+     */
+    private boolean isSearchCommand(String messageText) {
+        if (messageText == null) return false;
+        String lower = messageText.toLowerCase().trim();
+        return lower.startsWith("/search") || lower.startsWith("search ");
+    }
+
+    /**
+     * Handle /search command — find verses matching a quote or phrase
+     */
+    private void handleSearchCommand(Long chatId, String messageText, User user) {
+        // Extract the search query
+        String query = messageText.replaceAll("(?i)^/?search(@\\w+)?\\s*", "").trim();
+
+        if (query.isEmpty()) {
+            sendMessage(chatId, "Please provide a phrase to search for.\n\nExample: <code>/search For God so loved the world</code>");
+            return;
+        }
+
+        logger.info("Search request in chat {}: {}", chatId, query);
+        long startTime = System.currentTimeMillis();
+
+        try {
+            List<BibleVerse> results = bibleService.searchVerses(query);
+
+            if (results.isEmpty()) {
+                sendMessage(chatId, "No verses found matching: <i>" + escapeHtml(query) + "</i>");
+                return;
+            }
+
+            // Send the top result as a full verse
+            BibleVerse topResult = results.get(0);
+            sendVerse(chatId, topResult);
+
+            // If there are more results, show them as a list
+            if (results.size() > 1) {
+                StringBuilder moreResults = new StringBuilder();
+                moreResults.append("<b>Other matches:</b>\n");
+                for (int i = 1; i < results.size(); i++) {
+                    BibleVerse v = results.get(i);
+                    moreResults.append("• <b>").append(v.getReference()).append("</b> — ")
+                            .append(truncate(v.getText(), 80)).append("\n");
+                }
+                moreResults.append("\n<i>Use /get followed by a reference to read any of these.</i>");
+                sendMessage(chatId, moreResults.toString());
+            }
+
+            long responseTime = System.currentTimeMillis() - startTime;
+            logger.info("Search completed for '{}' in chat {} in {}ms ({} results)",
+                    query, chatId, responseTime, results.size());
+
+        } catch (Exception e) {
+            sendMessage(chatId, "Sorry, I encountered an issue searching. Please try again.");
+            logger.error("Error in search for '{}' in chat {}", query, chatId, e);
+        }
+    }
+
+    /**
+     * Escape HTML special characters for Telegram messages
+     */
+    private String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Check if the message is a direct trigger (@mention, /command, or plain get/find)
+     */
+    private boolean isDirectTrigger(String messageText) {
         if (messageText == null) return false;
 
+        String lower = messageText.toLowerCase().trim();
+
+        // @eccprayerbot mention
         String mention = "@" + botUsername.toLowerCase();
-        return messageText.toLowerCase().contains(mention);
+        if (lower.contains(mention)) return true;
+
+        // Slash commands: /get, /find (handles /get@eccprayerbot in groups)
+        if (lower.startsWith("/get") || lower.startsWith("/find")) return true;
+
+        // Plain text: "get/Get/GET John 3:16" or "find/Find/FIND Romans 8:28"
+        if (lower.startsWith("get ") || lower.startsWith("get\n")
+                || lower.startsWith("find ") || lower.startsWith("find\n")) return true;
+
+        return false;
     }
 
     /**

@@ -125,8 +125,9 @@ public class BibleReferenceParser {
             return null;
         }
 
-        // Remove bot mentions (e.g., @BotUsername) before parsing
+        // Remove bot mentions, slash commands, and plain get/find prefixes before parsing
         text = text.replaceAll("@\\w+\\s*", "").trim();
+        text = text.replaceAll("(?i)^/?(get|find)\\s+", "").trim();
 
         Matcher matcher = BIBLE_REF_PATTERN.matcher(text);
 
