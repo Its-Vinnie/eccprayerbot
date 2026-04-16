@@ -118,4 +118,42 @@ class BibleReferenceParserTest {
         assertFalse(ref.hasSpecificVerses());
         assertNull(ref.getSpecificVerses());
     }
+
+    @Test
+    void testParseWholeChapterForNumberedBook() {
+        BibleReference ref = parser.parse("2 Kings 2");
+        assertNotNull(ref, "Should support whole chapter references for numbered books");
+        assertEquals("2 Kings", ref.getBook());
+        assertEquals(2, ref.getChapter());
+        assertNull(ref.getVerseStart());
+        assertEquals("KJV", ref.getTranslation());
+    }
+
+    @Test
+    void testParseSpaceSeparatedVerseForNumberedBook() {
+        BibleReference ref = parser.parse("2 Kings 2 1");
+        assertNotNull(ref, "Should support space separated verse references");
+        assertEquals("2 Kings", ref.getBook());
+        assertEquals(2, ref.getChapter());
+        assertEquals(1, ref.getVerseStart());
+        assertNull(ref.getVerseEnd());
+    }
+
+    @Test
+    void testParseThreeWordBookName() {
+        BibleReference ref = parser.parse("Song of Solomon 2:1");
+        assertNotNull(ref, "Should support three-word book names");
+        assertEquals("Song of Solomon", ref.getBook());
+        assertEquals(2, ref.getChapter());
+        assertEquals(1, ref.getVerseStart());
+    }
+
+    @Test
+    void testParseTelegramCommandWithMention() {
+        BibleReference ref = parser.parse("/get@eccprayerbot 2 Kings 2");
+        assertNotNull(ref, "Should ignore Telegram command mentions before parsing");
+        assertEquals("2 Kings", ref.getBook());
+        assertEquals(2, ref.getChapter());
+        assertNull(ref.getVerseStart());
+    }
 }

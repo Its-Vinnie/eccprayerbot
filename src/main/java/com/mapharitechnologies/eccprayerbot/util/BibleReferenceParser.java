@@ -6,9 +6,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,98 +29,98 @@ public class BibleReferenceParser {
 
     private static final Logger log = LoggerFactory.getLogger(BibleReferenceParser.class);
 
-    // Pattern to match Bible references
-    // Matches:
-    // - Book Chapter (Whole chapter)
-    // - Book Chapter:Verse (Single verse)
-    // - Book Chapter:Verse-Verse (Verse range)
-    // - Book Chapter:Verse,Verse,Verse (Specific verses)
-    // - Book Chapter:Verse Translation (With translation)
-    private static final Pattern BIBLE_REF_PATTERN = Pattern.compile(
-            "(?i)(\\d?\\s*[a-z]+(?:\\s+[a-z]+)?)\\s+(\\d+)(?::(\\d+(?:,\\d+)*)(?:-(\\d+))?)?(?:\\s+([a-z0-9]{2,10}))?",
+    // Matches the part after the book name:
+    // - Chapter
+    // - Chapter:Verse
+    // - Chapter Verse (space-separated verse)
+    // - Chapter:Verse-Verse
+    // - Chapter:Verse,Verse,Verse
+    // - Optional translation suffix
+    private static final Pattern REFERENCE_DETAILS_PATTERN = Pattern.compile(
+            "^(\\d+)(?:(?::|\\s+)(\\d+(?:,\\d+)*)(?:-(\\d+))?)?(?:\\s+([a-z0-9]{2,10}))?$",
             Pattern.CASE_INSENSITIVE
     );
 
-    // Common Bible book abbreviations
-    private static final Map<String, String> BOOK_ABBREVIATIONS = new HashMap<>();
+    // Canonical book names plus common abbreviations and compact forms.
+    private static final Map<String, String> BOOK_ALIASES = new HashMap<>();
+    private static final List<String> SORTED_BOOK_ALIASES = new ArrayList<>();
 
     static {
         // Old Testament
-        BOOK_ABBREVIATIONS.put("gen", "Genesis");
-        BOOK_ABBREVIATIONS.put("exod", "Exodus");
-        BOOK_ABBREVIATIONS.put("ex", "Exodus");
-        BOOK_ABBREVIATIONS.put("lev", "Leviticus");
-        BOOK_ABBREVIATIONS.put("num", "Numbers");
-        BOOK_ABBREVIATIONS.put("deut", "Deuteronomy");
-        BOOK_ABBREVIATIONS.put("josh", "Joshua");
-        BOOK_ABBREVIATIONS.put("judg", "Judges");
-        BOOK_ABBREVIATIONS.put("ruth", "Ruth");
-        BOOK_ABBREVIATIONS.put("1sam", "1 Samuel");
-        BOOK_ABBREVIATIONS.put("2sam", "2 Samuel");
-        BOOK_ABBREVIATIONS.put("1kgs", "1 Kings");
-        BOOK_ABBREVIATIONS.put("2kgs", "2 Kings");
-        BOOK_ABBREVIATIONS.put("1chr", "1 Chronicles");
-        BOOK_ABBREVIATIONS.put("2chr", "2 Chronicles");
-        BOOK_ABBREVIATIONS.put("ezra", "Ezra");
-        BOOK_ABBREVIATIONS.put("neh", "Nehemiah");
-        BOOK_ABBREVIATIONS.put("esth", "Esther");
-        BOOK_ABBREVIATIONS.put("job", "Job");
-        BOOK_ABBREVIATIONS.put("ps", "Psalms");
-        BOOK_ABBREVIATIONS.put("psa", "Psalms");
-        BOOK_ABBREVIATIONS.put("psalm", "Psalms");
-        BOOK_ABBREVIATIONS.put("prov", "Proverbs");
-        BOOK_ABBREVIATIONS.put("eccl", "Ecclesiastes");
-        BOOK_ABBREVIATIONS.put("song", "Song of Solomon");
-        BOOK_ABBREVIATIONS.put("isa", "Isaiah");
-        BOOK_ABBREVIATIONS.put("jer", "Jeremiah");
-        BOOK_ABBREVIATIONS.put("lam", "Lamentations");
-        BOOK_ABBREVIATIONS.put("ezek", "Ezekiel");
-        BOOK_ABBREVIATIONS.put("dan", "Daniel");
-        BOOK_ABBREVIATIONS.put("hos", "Hosea");
-        BOOK_ABBREVIATIONS.put("joel", "Joel");
-        BOOK_ABBREVIATIONS.put("amos", "Amos");
-        BOOK_ABBREVIATIONS.put("obad", "Obadiah");
-        BOOK_ABBREVIATIONS.put("jonah", "Jonah");
-        BOOK_ABBREVIATIONS.put("mic", "Micah");
-        BOOK_ABBREVIATIONS.put("nah", "Nahum");
-        BOOK_ABBREVIATIONS.put("hab", "Habakkuk");
-        BOOK_ABBREVIATIONS.put("zeph", "Zephaniah");
-        BOOK_ABBREVIATIONS.put("hag", "Haggai");
-        BOOK_ABBREVIATIONS.put("zech", "Zechariah");
-        BOOK_ABBREVIATIONS.put("mal", "Malachi");
+        registerBook("Genesis", "gen");
+        registerBook("Exodus", "exod", "ex");
+        registerBook("Leviticus", "lev");
+        registerBook("Numbers", "num");
+        registerBook("Deuteronomy", "deut", "deu");
+        registerBook("Joshua", "josh", "jos");
+        registerBook("Judges", "judg", "jdg");
+        registerBook("Ruth");
+        registerBook("1 Samuel", "1sam", "1 sam", "1sa", "1 sa");
+        registerBook("2 Samuel", "2sam", "2 sam", "2sa", "2 sa");
+        registerBook("1 Kings", "1kgs", "1 kgs", "1kg", "1 kg", "1ki", "1 ki");
+        registerBook("2 Kings", "2kgs", "2 kgs", "2kg", "2 kg", "2ki", "2 ki");
+        registerBook("1 Chronicles", "1chr", "1 chr", "1ch", "1 ch");
+        registerBook("2 Chronicles", "2chr", "2 chr", "2ch", "2 ch");
+        registerBook("Ezra", "ezr");
+        registerBook("Nehemiah", "neh");
+        registerBook("Esther", "esth", "est");
+        registerBook("Job");
+        registerBook("Psalms", "ps", "psa", "psalm");
+        registerBook("Proverbs", "prov", "pro");
+        registerBook("Ecclesiastes", "eccl", "ecc");
+        registerBook("Song of Solomon", "song", "song of songs", "songs");
+        registerBook("Isaiah", "isa");
+        registerBook("Jeremiah", "jer");
+        registerBook("Lamentations", "lam");
+        registerBook("Ezekiel", "ezek", "ezk");
+        registerBook("Daniel", "dan");
+        registerBook("Hosea", "hos");
+        registerBook("Joel", "jol");
+        registerBook("Amos", "amo");
+        registerBook("Obadiah", "obad", "oba");
+        registerBook("Jonah", "jon");
+        registerBook("Micah", "mic");
+        registerBook("Nahum", "nah", "nam");
+        registerBook("Habakkuk", "hab");
+        registerBook("Zephaniah", "zeph", "zep");
+        registerBook("Haggai", "hag");
+        registerBook("Zechariah", "zech", "zec");
+        registerBook("Malachi", "mal");
 
         // New Testament
-        BOOK_ABBREVIATIONS.put("matt", "Matthew");
-        BOOK_ABBREVIATIONS.put("mt", "Matthew");
-        BOOK_ABBREVIATIONS.put("mark", "Mark");
-        BOOK_ABBREVIATIONS.put("mk", "Mark");
-        BOOK_ABBREVIATIONS.put("luke", "Luke");
-        BOOK_ABBREVIATIONS.put("lk", "Luke");
-        BOOK_ABBREVIATIONS.put("john", "John");
-        BOOK_ABBREVIATIONS.put("jn", "John");
-        BOOK_ABBREVIATIONS.put("acts", "Acts");
-        BOOK_ABBREVIATIONS.put("rom", "Romans");
-        BOOK_ABBREVIATIONS.put("1cor", "1 Corinthians");
-        BOOK_ABBREVIATIONS.put("2cor", "2 Corinthians");
-        BOOK_ABBREVIATIONS.put("gal", "Galatians");
-        BOOK_ABBREVIATIONS.put("eph", "Ephesians");
-        BOOK_ABBREVIATIONS.put("phil", "Philippians");
-        BOOK_ABBREVIATIONS.put("col", "Colossians");
-        BOOK_ABBREVIATIONS.put("1thess", "1 Thessalonians");
-        BOOK_ABBREVIATIONS.put("2thess", "2 Thessalonians");
-        BOOK_ABBREVIATIONS.put("1tim", "1 Timothy");
-        BOOK_ABBREVIATIONS.put("2tim", "2 Timothy");
-        BOOK_ABBREVIATIONS.put("titus", "Titus");
-        BOOK_ABBREVIATIONS.put("phlm", "Philemon");
-        BOOK_ABBREVIATIONS.put("heb", "Hebrews");
-        BOOK_ABBREVIATIONS.put("jas", "James");
-        BOOK_ABBREVIATIONS.put("1pet", "1 Peter");
-        BOOK_ABBREVIATIONS.put("2pet", "2 Peter");
-        BOOK_ABBREVIATIONS.put("1john", "1 John");
-        BOOK_ABBREVIATIONS.put("2john", "2 John");
-        BOOK_ABBREVIATIONS.put("3john", "3 John");
-        BOOK_ABBREVIATIONS.put("jude", "Jude");
-        BOOK_ABBREVIATIONS.put("rev", "Revelation");
+        registerBook("Matthew", "matt", "mt", "mat");
+        registerBook("Mark", "mk", "mrk");
+        registerBook("Luke", "lk", "luk");
+        registerBook("John", "jn", "jhn");
+        registerBook("Acts", "act");
+        registerBook("Romans", "rom");
+        registerBook("1 Corinthians", "1cor", "1 cor", "1co", "1 co");
+        registerBook("2 Corinthians", "2cor", "2 cor", "2co", "2 co");
+        registerBook("Galatians", "gal");
+        registerBook("Ephesians", "eph");
+        registerBook("Philippians", "phil", "php");
+        registerBook("Colossians", "col");
+        registerBook("1 Thessalonians", "1thess", "1 thess", "1thes", "1 thes", "1th", "1 th");
+        registerBook("2 Thessalonians", "2thess", "2 thess", "2thes", "2 thes", "2th", "2 th");
+        registerBook("1 Timothy", "1tim", "1 tim", "1ti", "1 ti");
+        registerBook("2 Timothy", "2tim", "2 tim", "2ti", "2 ti");
+        registerBook("Titus", "tit");
+        registerBook("Philemon", "phlm", "phm");
+        registerBook("Hebrews", "heb");
+        registerBook("James", "jas", "jam");
+        registerBook("1 Peter", "1pet", "1 pet", "1pe", "1 pe");
+        registerBook("2 Peter", "2pet", "2 pet", "2pe", "2 pe");
+        registerBook("1 John", "1john", "1 john", "1jn", "1 jn");
+        registerBook("2 John", "2john", "2 john", "2jn", "2 jn");
+        registerBook("3 John", "3john", "3 john", "3jn", "3 jn");
+        registerBook("Jude", "jud");
+        registerBook("Revelation", "rev", "re");
+
+        SORTED_BOOK_ALIASES.addAll(BOOK_ALIASES.keySet());
+        SORTED_BOOK_ALIASES.sort(Comparator
+                .comparingInt((String alias) -> alias.split(" ").length)
+                .thenComparingInt(String::length)
+                .reversed());
     }
 
     /**
@@ -128,26 +131,28 @@ public class BibleReferenceParser {
             return null;
         }
 
-        // Remove bot mentions, slash commands, and plain get/find prefixes before parsing
-        text = text.replaceAll("@\\w+\\s*", "").trim();
-        text = text.replaceAll("(?i)^/?(get|find)\\s+", "").trim();
-
-        Matcher matcher = BIBLE_REF_PATTERN.matcher(text);
-
-        if (!matcher.find()) {
-            log.debug("No Bible reference pattern found in text: {}", text);
+        String normalizedText = sanitizeInput(text);
+        if (normalizedText.isBlank()) {
             return null;
         }
 
         try {
-            String bookRaw = matcher.group(1).trim();
-            String chapterStr = matcher.group(2);
-            String verseGroup = matcher.group(3);  // Could be "1" or "1,3,7"
-            String verseEndStr = matcher.group(4);
-            String translation = matcher.group(5);
+            BookMatch bookMatch = findBookMatch(normalizedText);
+            if (bookMatch == null) {
+                log.debug("No known Bible book found in text: {}", normalizedText);
+                return null;
+            }
 
-            // Normalize book name
-            String book = normalizeBookName(bookRaw);
+            Matcher matcher = REFERENCE_DETAILS_PATTERN.matcher(bookMatch.remainingText());
+            if (!matcher.matches()) {
+                log.debug("Book matched but reference details were invalid: {}", normalizedText);
+                return null;
+            }
+
+            String chapterStr = matcher.group(1);
+            String verseGroup = matcher.group(2);  // Could be "1" or "1,3,7"
+            String verseEndStr = matcher.group(3);
+            String translation = matcher.group(4);
 
             // Normalize translation (trim and uppercase for consistency)
             if (translation != null) {
@@ -175,7 +180,7 @@ public class BibleReferenceParser {
             }
 
             BibleReference reference = BibleReference.builder()
-                    .book(book)
+                    .book(bookMatch.book())
                     .chapter(Integer.parseInt(chapterStr))
                     .verseStart(verseStart)
                     .verseEnd(verseEnd)
@@ -198,38 +203,58 @@ public class BibleReferenceParser {
     }
 
     /**
-     * Normalize book name (expand abbreviations, fix capitalization)
-     */
-    private String normalizeBookName(String bookRaw) {
-        String normalized = bookRaw.trim().toLowerCase().replaceAll("\\s+", "");
-
-        // Check if it's an abbreviation
-        String fullName = BOOK_ABBREVIATIONS.get(normalized);
-        if (fullName != null) {
-            return fullName;
-        }
-
-        // Capitalize first letter of each word
-        String[] words = bookRaw.trim().split("\\s+");
-        StringBuilder result = new StringBuilder();
-        for (String word : words) {
-            if (!word.isEmpty()) {
-                result.append(Character.toUpperCase(word.charAt(0)))
-                        .append(word.substring(1).toLowerCase())
-                        .append(" ");
-            }
-        }
-
-        return result.toString().trim();
-    }
-
-    /**
      * Check if message contains a Bible reference
      */
     public boolean containsReference(String text) {
-        if (text == null || text.isBlank()) {
-            return false;
+        return parse(text) != null;
+    }
+
+    /**
+     * Remove Telegram command prefixes and normalize spacing before parsing.
+     */
+    private String sanitizeInput(String text) {
+        String sanitized = text.trim();
+        sanitized = sanitized.replaceAll("(?i)^/?(get|find)(@\\w+)?\\s+", "");
+        sanitized = sanitized.replaceAll("(?i)^@\\w+\\s*", "");
+        sanitized = sanitized.replaceAll("(?i)@\\w+", " ");
+        sanitized = sanitized.replace(".", "");
+        sanitized = sanitized.replaceAll("\\s+", " ").trim().toLowerCase();
+        return sanitized;
+    }
+
+    private BookMatch findBookMatch(String text) {
+        for (String alias : SORTED_BOOK_ALIASES) {
+            if (text.equals(alias)) {
+                return null;
+            }
+            if (text.startsWith(alias + " ")) {
+                String book = BOOK_ALIASES.get(alias);
+                String remainingText = text.substring(alias.length()).trim();
+                return new BookMatch(book, remainingText);
+            }
         }
-        return BIBLE_REF_PATTERN.matcher(text).find();
+        return null;
+    }
+
+    private static void registerBook(String canonicalName, String... aliases) {
+        Set<String> allAliases = new LinkedHashSet<>();
+        allAliases.add(canonicalName);
+        allAliases.add(canonicalName.replace(" ", ""));
+
+        for (String alias : aliases) {
+            allAliases.add(alias);
+            allAliases.add(alias.replace(" ", ""));
+        }
+
+        for (String alias : allAliases) {
+            BOOK_ALIASES.put(normalizeAlias(alias), canonicalName);
+        }
+    }
+
+    private static String normalizeAlias(String alias) {
+        return alias.toLowerCase().trim().replaceAll("\\s+", " ");
+    }
+
+    private record BookMatch(String book, String remainingText) {
     }
 }
