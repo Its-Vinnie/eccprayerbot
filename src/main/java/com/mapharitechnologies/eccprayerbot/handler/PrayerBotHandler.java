@@ -11,15 +11,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.methods.updates.DeleteWebhook;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
+import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.InlineQuery;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.inputmessagecontent.InputTextMessageContent;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResult;
 import org.telegram.telegrambots.meta.api.objects.inlinequery.result.InlineQueryResultArticle;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +50,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     private static final Logger logger = LoggerFactory.getLogger(PrayerBotHandler.class);
     private static final String INLINE_TRUNCATION_NOTE =
             "\n\n<i>Chapter truncated in inline mode. Use /get with this reference to read the full chapter.</i>";
+    private static final String INLINE_CHAPTER_CALLBACK_PREFIX = "chapter";
 
     private final String botUsername;
     private final BibleService bibleService;
@@ -84,6 +90,11 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        if (update.hasCallbackQuery()) {
+            handleCallbackQuery(update.getCallbackQuery());
+            return;
+        }
+
         // Handle inline queries
         if (update.hasInlineQuery()) {
             handleInlineQuery(update.getInlineQuery());
@@ -101,9 +112,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             return;
         }
 
-        // Inline-generated messages arrive back as chat updates. Use that to continue long chapters.
         if (message.getViaBot() != null && botUsername.equalsIgnoreCase(message.getViaBot().getUserName())) {
-            handleInlinePostedMessage(message);
             return;
         }
 
@@ -307,6 +316,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
         article.setId(id);
         article.setTitle(verse.getReference());
         article.setDescription(verse.toInlinePreviewText(150));
+        article.setReplyMarkup(buildInlineReplyMarkup(verse, 0));
         article.setInputMessageContent(messageContent);
         return article;
     }
@@ -316,49 +326,159 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
      * For long chapter requests, return the first safe chunk with a continuation note.
      */
     private String buildInlineMessageText(BibleVerse verse) {
-        return MessageSplitter.toInlineMessage(verse.formatForTelegram(), INLINE_TRUNCATION_NOTE);
+        String fullText = verse.formatForTelegram();
+        List<String> chunks = MessageSplitter.split(fullText);
+
+        if (chunks.isEmpty()) {
+            return fullText;
+        }
+
+        if (chunks.size() == 1) {
+            return chunks.get(0);
+        }
+
+        if (isChapterResult(verse)) {
+            return chunks.get(0);
+        }
+
+        return MessageSplitter.toInlineMessage(fullText, INLINE_TRUNCATION_NOTE);
     }
 
     /**
-     * When a user inserts one of this bot's inline results into chat, Telegram sends that message back as an update.
-     * If the inline content was only the first chunk of a long chapter, send the remaining chunks now.
+     * Telegram inline mode can't send multiple messages to the target chat on one tap,
+     * but it can edit the inserted inline message. For long chapter results, page through chunks.
      */
-    private void handleInlinePostedMessage(Message message) {
+    private void handleCallbackQuery(CallbackQuery callbackQuery) {
         try {
-            BibleReference reference = extractReferenceFromInlineMessage(message.getText());
-            if (reference == null || reference.getVerseStart() != null || reference.hasSpecificVerses()) {
+            String data = callbackQuery.getData();
+            if ("noop".equals(data)) {
+                acknowledgeCallback(callbackQuery, null);
+                return;
+            }
+            if (data == null || !data.startsWith(INLINE_CHAPTER_CALLBACK_PREFIX + "|")) {
                 return;
             }
 
+            ChapterPage chapterPage = parseChapterPage(data);
+            if (chapterPage == null) {
+                acknowledgeCallback(callbackQuery, "Unable to open chapter page.");
+                return;
+            }
+
+            BibleReference reference = chapterPage.reference();
             BibleVerse verse = bibleService.getVerse(reference);
             if (verse == null || verse.getText() == null || verse.getText().isBlank()) {
+                acknowledgeCallback(callbackQuery, "Unable to load that chapter.");
                 return;
             }
 
             List<String> chunks = MessageSplitter.split(verse.formatForTelegram());
-            if (chunks.size() <= 1) {
+            if (chunks.isEmpty()) {
+                acknowledgeCallback(callbackQuery, null);
                 return;
             }
 
-            sendAdditionalChunks(message.getChatId(), chunks, 1);
-            logger.info("Sent {} follow-up chunks for inline chapter {}", chunks.size() - 1, reference.toDisplayString());
+            int page = Math.max(0, Math.min(chapterPage.page(), chunks.size() - 1));
+            EditMessageText editMessage = EditMessageText.builder()
+                    .inlineMessageId(callbackQuery.getInlineMessageId())
+                    .text(chunks.get(page))
+                    .parseMode("HTML")
+                    .disableWebPagePreview(true)
+                    .replyMarkup(buildInlineReplyMarkup(verse, page))
+                    .build();
+
+            execute(editMessage);
+            acknowledgeCallback(callbackQuery, "Page " + (page + 1) + " of " + chunks.size());
+            logger.info("Edited inline chapter {} to page {}", reference.toDisplayString(), page + 1);
         } catch (Exception e) {
-            logger.warn("Failed to continue inline chapter message for chat {}", message.getChatId(), e);
+            logger.warn("Failed to handle inline chapter pagination", e);
+            acknowledgeCallback(callbackQuery, "Unable to open chapter page.");
         }
     }
 
-    private BibleReference extractReferenceFromInlineMessage(String messageText) {
-        if (messageText == null || messageText.isBlank()) {
+    private void acknowledgeCallback(CallbackQuery callbackQuery, String text) {
+        try {
+            AnswerCallbackQuery answer = AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(text)
+                    .build();
+            execute(answer);
+        } catch (TelegramApiException e) {
+            logger.debug("Failed to answer callback query {}", callbackQuery.getId(), e);
+        }
+    }
+
+    private InlineKeyboardMarkup buildInlineReplyMarkup(BibleVerse verse, int page) {
+        if (!isChapterResult(verse)) {
             return null;
         }
 
-        String firstLine = messageText.split("\\R", 2)[0]
-                .replaceAll("\\s*\\([A-Za-z0-9]{2,10}\\)\\s*", " ")
-                .replace("\uD83D\uDCD6", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
+        List<String> chunks = MessageSplitter.split(verse.formatForTelegram());
+        if (chunks.size() <= 1) {
+            return null;
+        }
 
-        return referenceParser.parse(firstLine);
+        int safePage = Math.max(0, Math.min(page, chunks.size() - 1));
+        List<InlineKeyboardButton> row = new ArrayList<>();
+
+        if (safePage > 0) {
+            row.add(InlineKeyboardButton.builder()
+                    .text("Prev")
+                    .callbackData(buildChapterCallbackData(verse, safePage - 1))
+                    .build());
+        }
+
+        row.add(InlineKeyboardButton.builder()
+                .text((safePage + 1) + "/" + chunks.size())
+                .callbackData("noop")
+                .build());
+
+        if (safePage < chunks.size() - 1) {
+            row.add(InlineKeyboardButton.builder()
+                    .text("Next")
+                    .callbackData(buildChapterCallbackData(verse, safePage + 1))
+                    .build());
+        }
+
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(row)
+                .build();
+    }
+
+    private boolean isChapterResult(BibleVerse verse) {
+        return verse != null
+                && verse.getBook() != null
+                && verse.getChapter() != null
+                && verse.getVerse() == null;
+    }
+
+    private String buildChapterCallbackData(BibleVerse verse, int page) {
+        String translation = verse.getTranslation() == null || verse.getTranslation().isBlank()
+                ? "KJV"
+                : verse.getTranslation().trim().toUpperCase();
+        return INLINE_CHAPTER_CALLBACK_PREFIX + "|"
+                + verse.getBook() + "|"
+                + verse.getChapter() + "|"
+                + translation + "|"
+                + page;
+    }
+
+    private ChapterPage parseChapterPage(String data) {
+        String[] parts = data.split("\\|", 5);
+        if (parts.length != 5 || !INLINE_CHAPTER_CALLBACK_PREFIX.equals(parts[0])) {
+            return null;
+        }
+
+        try {
+            BibleReference reference = BibleReference.builder()
+                    .book(parts[1])
+                    .chapter(Integer.parseInt(parts[2]))
+                    .translation(parts[3])
+                    .build();
+            return new ChapterPage(reference, Integer.parseInt(parts[4]));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -545,6 +665,9 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
             execute(message);
         }
+    }
+
+    private record ChapterPage(BibleReference reference, int page) {
     }
 
     /**
