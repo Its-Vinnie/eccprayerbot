@@ -43,6 +43,8 @@ import java.util.List;
 public class PrayerBotHandler extends TelegramLongPollingBot {
 
     private static final Logger logger = LoggerFactory.getLogger(PrayerBotHandler.class);
+    private static final String INLINE_TRUNCATION_NOTE =
+            "\n\n<i>Chapter truncated in inline mode. Use /get with this reference to read the full chapter.</i>";
 
     private final String botUsername;
     private final BibleService bibleService;
@@ -99,8 +101,9 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             return;
         }
 
-        // Skip messages sent via this bot's inline mode to avoid duplicate responses
+        // Inline-generated messages arrive back as chat updates. Use that to continue long chapters.
         if (message.getViaBot() != null && botUsername.equalsIgnoreCase(message.getViaBot().getUserName())) {
+            handleInlinePostedMessage(message);
             return;
         }
 
@@ -296,16 +299,66 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
      */
     private InlineQueryResultArticle buildInlineArticle(BibleVerse verse, String id) {
         InputTextMessageContent messageContent = new InputTextMessageContent();
-        messageContent.setMessageText(verse.formatForTelegram());
+        messageContent.setMessageText(buildInlineMessageText(verse));
         messageContent.setParseMode("HTML");
         messageContent.setDisableWebPagePreview(true);
 
         InlineQueryResultArticle article = new InlineQueryResultArticle();
         article.setId(id);
         article.setTitle(verse.getReference());
-        article.setDescription(truncate(verse.getText(), 150));
+        article.setDescription(verse.toInlinePreviewText(150));
         article.setInputMessageContent(messageContent);
         return article;
+    }
+
+    /**
+     * Telegram inline results cannot exceed a single message payload.
+     * For long chapter requests, return the first safe chunk with a continuation note.
+     */
+    private String buildInlineMessageText(BibleVerse verse) {
+        return MessageSplitter.toInlineMessage(verse.formatForTelegram(), INLINE_TRUNCATION_NOTE);
+    }
+
+    /**
+     * When a user inserts one of this bot's inline results into chat, Telegram sends that message back as an update.
+     * If the inline content was only the first chunk of a long chapter, send the remaining chunks now.
+     */
+    private void handleInlinePostedMessage(Message message) {
+        try {
+            BibleReference reference = extractReferenceFromInlineMessage(message.getText());
+            if (reference == null || reference.getVerseStart() != null || reference.hasSpecificVerses()) {
+                return;
+            }
+
+            BibleVerse verse = bibleService.getVerse(reference);
+            if (verse == null || verse.getText() == null || verse.getText().isBlank()) {
+                return;
+            }
+
+            List<String> chunks = MessageSplitter.split(verse.formatForTelegram());
+            if (chunks.size() <= 1) {
+                return;
+            }
+
+            sendAdditionalChunks(message.getChatId(), chunks, 1);
+            logger.info("Sent {} follow-up chunks for inline chapter {}", chunks.size() - 1, reference.toDisplayString());
+        } catch (Exception e) {
+            logger.warn("Failed to continue inline chapter message for chat {}", message.getChatId(), e);
+        }
+    }
+
+    private BibleReference extractReferenceFromInlineMessage(String messageText) {
+        if (messageText == null || messageText.isBlank()) {
+            return null;
+        }
+
+        String firstLine = messageText.split("\\R", 2)[0]
+                .replaceAll("\\s*\\([A-Za-z0-9]{2,10}\\)\\s*", " ")
+                .replace("\uD83D\uDCD6", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        return referenceParser.parse(firstLine);
     }
 
     /**
@@ -454,17 +507,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
         try {
             String fullText = verse.formatForTelegram();
             List<String> chunks = MessageSplitter.split(fullText);
-
-            for (String chunk : chunks) {
-                SendMessage message = SendMessage.builder()
-                        .chatId(chatId.toString())
-                        .text(chunk)
-                        .parseMode("HTML")
-                        .disableWebPagePreview(true)
-                        .build();
-
-                execute(message);
-            }
+            sendAdditionalChunks(chatId, chunks, 0);
 
         } catch (TelegramApiException e) {
             logger.error("Failed to send verse to chat {}", chatId, e);
@@ -488,6 +531,19 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
         } catch (TelegramApiException e) {
             logger.error("Failed to send message to chat {}", chatId, e);
+        }
+    }
+
+    private void sendAdditionalChunks(Long chatId, List<String> chunks, int startIndex) throws TelegramApiException {
+        for (int i = startIndex; i < chunks.size(); i++) {
+            SendMessage message = SendMessage.builder()
+                    .chatId(chatId.toString())
+                    .text(chunks.get(i))
+                    .parseMode("HTML")
+                    .disableWebPagePreview(true)
+                    .build();
+
+            execute(message);
         }
     }
 

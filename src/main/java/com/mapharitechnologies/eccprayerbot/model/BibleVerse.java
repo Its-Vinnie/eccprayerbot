@@ -214,6 +214,26 @@ public class BibleVerse {
     }
 
     /**
+     * Builds a compact plain-text preview for inline result cards.
+     * For chapter results, prefer only the first verse so the picker stays readable.
+     */
+    public String toInlinePreviewText(int maxLength) {
+        String cleaned = cleanText(text);
+        if (cleaned.isBlank()) {
+            return "";
+        }
+
+        String preview = verse == null ? extractFirstVerse(cleaned) : cleaned;
+        preview = preview.replaceAll("<[^>]+>", "").replaceAll("\\s+", " ").trim();
+
+        if (preview.length() <= maxLength) {
+            return preview;
+        }
+
+        return preview.substring(0, Math.max(0, maxLength - 3)).trim() + "...";
+    }
+
+    /**
      * Cleans and formats the verse text into readable paragraphs
      */
     private String cleanText(String rawText) {
@@ -235,6 +255,15 @@ public class BibleVerse {
         cleaned = cleaned.trim();
 
         return cleaned;
+    }
+
+    private String extractFirstVerse(String cleanedText) {
+        if (cleanedText == null || cleanedText.isBlank()) {
+            return "";
+        }
+
+        String[] parts = cleanedText.split("\\n\\n<b>\\d+(?:-\\d+)?</b>", 2);
+        return parts.length == 0 ? cleanedText : parts[0];
     }
 
     /**

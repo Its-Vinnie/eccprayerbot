@@ -48,6 +48,28 @@ public class MessageSplitter {
         return chunks;
     }
 
+    /**
+     * Returns a single inline-safe chunk. If the input exceeds the inline payload limit,
+     * the first chunk is returned with a continuation note appended.
+     */
+    public static String toInlineMessage(String text, String continuationNote) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+
+        List<String> chunks = split(text);
+        if (chunks.isEmpty()) {
+            return text;
+        }
+
+        if (chunks.size() == 1) {
+            return chunks.get(0);
+        }
+
+        String note = continuationNote == null ? "" : continuationNote;
+        return chunks.get(0).trim() + note;
+    }
+
     private static int findSafeSplitIndex(String text, int maxLength) {
         if (text.length() <= maxLength) return text.length();
 
