@@ -1,5 +1,6 @@
 package com.mapharitechnologies.eccprayerbot.controller;
 
+import com.mapharitechnologies.eccprayerbot.analytics.service.AnalyticsTrackingService;
 import com.mapharitechnologies.eccprayerbot.service.BibleService;
 import com.mapharitechnologies.eccprayerbot.service.RequestLoggingService;
 import org.springframework.http.ResponseEntity;
@@ -19,10 +20,13 @@ public class HealthController {
 
     private final BibleService bibleService;
     private final RequestLoggingService loggingService;
+    private final AnalyticsTrackingService analyticsTrackingService;
 
-    public HealthController(BibleService bibleService, RequestLoggingService loggingService) {
+    public HealthController(BibleService bibleService, RequestLoggingService loggingService,
+                            AnalyticsTrackingService analyticsTrackingService) {
         this.bibleService = bibleService;
         this.loggingService = loggingService;
+        this.analyticsTrackingService = analyticsTrackingService;
     }
 
     @GetMapping("/health")
@@ -45,6 +49,7 @@ public class HealthController {
         health.put("version", "1.0.0-MVP");
         health.put("bibleApiStatus", apiHealthy ? "AVAILABLE" : "UNAVAILABLE");
         health.put("databaseStatus", dbHealthy ? "CONNECTED" : "DISCONNECTED");
+        health.put("analyticsStatus", analyticsTrackingService.isEnabled() ? "ENABLED" : "DISABLED");
 
         return ResponseEntity.ok(health);
     }
@@ -57,6 +62,10 @@ public class HealthController {
 
         stats.put("successRate", String.format("%.2f%%", successRate));
         stats.put("bot", "ECCPrayerBot");
+        stats.put("analyticsEnabled", analyticsTrackingService.isEnabled());
+        if (analyticsTrackingService.isEnabled()) {
+            stats.put("usageSummary", analyticsTrackingService.getDashboardSummary(5));
+        }
 
         return ResponseEntity.ok(stats);
     }

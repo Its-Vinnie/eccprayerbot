@@ -3,10 +3,9 @@ package com.mapharitechnologies.eccprayerbot;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableAsync;
-
-import java.util.Objects;
 
 /**
  * ECCPrayerBot - Main Application Entry Point
@@ -18,7 +17,7 @@ import java.util.Objects;
  *
  * @version 1.0.0-MVP
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
 @EnableCaching
 @EnableAsync
 public class EccPrayerBotApplication {

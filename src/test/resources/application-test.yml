@@ -2,6 +2,13 @@ telegram:
   bot:
     token: mock-token
     username: mock-bot
+    clear-webhook-on-startup: false
+
+analytics:
+  supabase:
+    enabled: false
+
+ESV_API_TOKEN: mock-key
 
 bible:
   youversion:
@@ -13,6 +20,10 @@ bible:
     base-url: https://api.scripture.api.bible/v1
     key: mock-key
     default-version: de4e12af7f28f599-01
+    timeout: 5000
+  esv:
+    base-url: https://api.esv.org
+    token: mock-key
     timeout: 5000
 
 spring:

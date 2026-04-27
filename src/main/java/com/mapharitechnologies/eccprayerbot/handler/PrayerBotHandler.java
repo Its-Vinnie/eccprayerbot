@@ -1,5 +1,7 @@
 package com.mapharitechnologies.eccprayerbot.handler;
 
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsEventType;
+import com.mapharitechnologies.eccprayerbot.analytics.service.AnalyticsTrackingService;
 import com.mapharitechnologies.eccprayerbot.model.BibleReference;
 import com.mapharitechnologies.eccprayerbot.model.BibleVerse;
 import com.mapharitechnologies.eccprayerbot.model.BotRequest;
@@ -14,6 +16,8 @@ import org.telegram.telegrambots.meta.api.methods.AnswerInlineQuery;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Chat;
+import org.telegram.telegrambots.meta.api.objects.ChatMemberUpdated;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.methods.updates.DeleteWebhook;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -29,6 +33,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -56,21 +61,27 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     private final BibleService bibleService;
     private final BibleReferenceParser referenceParser;
     private final RequestLoggingService loggingService;
+    private final AnalyticsTrackingService analyticsTrackingService;
 
     public PrayerBotHandler(
             @Value("${telegram.bot.token}") String botToken,
             @Value("${telegram.bot.username}") String botUsername,
+            @Value("${telegram.bot.clear-webhook-on-startup:true}") boolean clearWebhookOnStartup,
             BibleService bibleService,
             BibleReferenceParser referenceParser,
-            RequestLoggingService loggingService) {
+            RequestLoggingService loggingService,
+            AnalyticsTrackingService analyticsTrackingService) {
 
         super(botToken);
         this.botUsername = botUsername;
         this.bibleService = bibleService;
         this.referenceParser = referenceParser;
         this.loggingService = loggingService;
+        this.analyticsTrackingService = analyticsTrackingService;
 
-        clearWebhooks(botToken);
+        if (clearWebhookOnStartup) {
+            clearWebhooks(botToken);
+        }
         logger.info("ECCPrayerBot initialized as @{}", botUsername);
     }
 
@@ -90,14 +101,19 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        if (update.hasMyChatMember()) {
+            handleMyChatMemberUpdate(update.getUpdateId(), update.getMyChatMember());
+            return;
+        }
+
         if (update.hasCallbackQuery()) {
-            handleCallbackQuery(update.getCallbackQuery());
+            handleCallbackQuery(update.getUpdateId(), update.getCallbackQuery());
             return;
         }
 
         // Handle inline queries
         if (update.hasInlineQuery()) {
-            handleInlineQuery(update.getInlineQuery());
+            handleInlineQuery(update.getUpdateId(), update.getInlineQuery());
             return;
         }
 
@@ -118,16 +134,46 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
         String messageText = message.getText();
         Long chatId = message.getChatId();
+        Chat chat = message.getChat();
         User user = message.getFrom();
+        Instant occurredAt = toInstant(message.getDate());
+
+        if (isStartCommand(messageText)) {
+            analyticsTrackingService.trackMessageInteraction(
+                    update.getUpdateId(),
+                    chat,
+                    user,
+                    messageText,
+                    AnalyticsEventType.START_COMMAND,
+                    true,
+                    0L,
+                    null,
+                    occurredAt
+            );
+            return;
+        }
 
         // Handle /search command
         if (isSearchCommand(messageText)) {
-            handleSearchCommand(chatId, messageText, user);
+            handleSearchCommand(update.getUpdateId(), chat, chatId, messageText, user, occurredAt);
             return;
         }
 
         // Only respond to direct triggers (@mention, /get, /find, get, find)
         if (!isDirectTrigger(messageText)) {
+            if (isPrivateChat(chat)) {
+                analyticsTrackingService.trackMessageInteraction(
+                        update.getUpdateId(),
+                        chat,
+                        user,
+                        messageText,
+                        AnalyticsEventType.PRIVATE_MESSAGE,
+                        true,
+                        0L,
+                        null,
+                        occurredAt
+                );
+            }
             return;
         }
 
@@ -151,7 +197,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             BibleReference reference = referenceParser.parse(messageText);
 
             if (reference == null) {
-                handleInvalidReference(chatId, startTime, request);
+                handleInvalidReference(update.getUpdateId(), chat, user, chatId, startTime, request, messageText, occurredAt);
                 return;
             }
 
@@ -164,7 +210,7 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             }
 
             if (verse == null || verse.getText() == null) {
-                handleFetchFailure(chatId, reference, startTime, request);
+                handleFetchFailure(update.getUpdateId(), chat, user, chatId, reference, startTime, request, messageText, occurredAt);
                 return;
             }
 
@@ -174,20 +220,32 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             // Log success
             long responseTime = System.currentTimeMillis() - startTime;
             loggingService.logSuccess(request, reference.toDisplayString(), responseTime);
+            analyticsTrackingService.trackMessageInteraction(
+                    update.getUpdateId(),
+                    chat,
+                    user,
+                    messageText,
+                    AnalyticsEventType.VERSE_REQUEST,
+                    true,
+                    responseTime,
+                    reference.toDisplayString(),
+                    occurredAt
+            );
 
             logger.info("Successfully sent verse {} to chat {} in {}ms",
                     reference.toDisplayString(), chatId, responseTime);
 
         } catch (Exception e) {
-            handleGeneralError(chatId, startTime, request, e);
+            handleGeneralError(update.getUpdateId(), chat, user, chatId, startTime, request, e, messageText, occurredAt);
         }
     }
 
     /**
      * Handle inline queries - users type @botusername followed by a Bible reference
      */
-    private void handleInlineQuery(InlineQuery inlineQuery) {
+    private void handleInlineQuery(Integer updateId, InlineQuery inlineQuery) {
         String queryText = inlineQuery.getQuery().trim();
+        Instant occurredAt = Instant.now();
 
         if (queryText.isEmpty()) {
             answerInlineWithHint(inlineQuery.getId());
@@ -223,6 +281,15 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
                     execute(answer);
 
                     long responseTime = System.currentTimeMillis() - startTime;
+                    analyticsTrackingService.trackInlineInteraction(
+                            updateId,
+                            inlineQuery.getFrom(),
+                            queryText,
+                            true,
+                            responseTime,
+                            reference.toDisplayString(),
+                            occurredAt
+                    );
                     logger.info("Inline query answered for {} in {}ms", reference.toDisplayString(), responseTime);
                     return;
                 }
@@ -230,13 +297,22 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
             // Not a reference or verse not found — try text search
             if (queryText.length() >= 3) {
-                handleInlineSearch(inlineQuery.getId(), queryText, startTime);
+                handleInlineSearch(updateId, inlineQuery.getFrom(), inlineQuery.getId(), queryText, startTime, occurredAt);
             } else {
                 answerInlineWithHint(inlineQuery.getId());
             }
 
         } catch (Exception e) {
             logger.error("Error handling inline query: {}", queryText, e);
+            analyticsTrackingService.trackInlineInteraction(
+                    updateId,
+                    inlineQuery.getFrom(),
+                    queryText,
+                    false,
+                    System.currentTimeMillis() - startTime,
+                    null,
+                    occurredAt
+            );
             try {
                 AnswerInlineQuery answer = AnswerInlineQuery.builder()
                         .inlineQueryId(inlineQuery.getId())
@@ -253,7 +329,8 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     /**
      * Handle inline text search — find verses matching a quote or paraphrase
      */
-    private void handleInlineSearch(String inlineQueryId, String query, long startTime) {
+    private void handleInlineSearch(Integer updateId, User user, String inlineQueryId, String query,
+                                    long startTime, Instant occurredAt) {
         try {
             List<BibleVerse> searchResults = bibleService.searchVerses(query);
 
@@ -267,6 +344,15 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
                         .isPersonal(false)
                         .build();
                 execute(answer);
+                analyticsTrackingService.trackInlineInteraction(
+                        updateId,
+                        user,
+                        query,
+                        true,
+                        System.currentTimeMillis() - startTime,
+                        null,
+                        occurredAt
+                );
                 return;
             }
 
@@ -285,11 +371,29 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             execute(answer);
 
             long responseTime = System.currentTimeMillis() - startTime;
+            analyticsTrackingService.trackInlineInteraction(
+                    updateId,
+                    user,
+                    query,
+                    true,
+                    responseTime,
+                    searchResults.get(0).getReference(),
+                    occurredAt
+            );
             logger.info("Inline search returned {} results for '{}' in {}ms",
                     results.size(), query, responseTime);
 
         } catch (Exception e) {
             logger.error("Error in inline search for: {}", query, e);
+            analyticsTrackingService.trackInlineInteraction(
+                    updateId,
+                    user,
+                    query,
+                    false,
+                    System.currentTimeMillis() - startTime,
+                    null,
+                    occurredAt
+            );
             try {
                 AnswerInlineQuery answer = AnswerInlineQuery.builder()
                         .inlineQueryId(inlineQueryId)
@@ -348,7 +452,9 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
      * Telegram inline mode can't send multiple messages to the target chat on one tap,
      * but it can edit the inserted inline message. For long chapter results, page through chunks.
      */
-    private void handleCallbackQuery(CallbackQuery callbackQuery) {
+    private void handleCallbackQuery(Integer updateId, CallbackQuery callbackQuery) {
+        Chat chat = null;
+        Instant occurredAt = Instant.now();
         try {
             String data = callbackQuery.getData();
             if ("noop".equals(data)) {
@@ -356,12 +462,14 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
                 return;
             }
             if (data == null || !data.startsWith(INLINE_CHAPTER_CALLBACK_PREFIX + "|")) {
+                analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(), data, false, occurredAt);
                 return;
             }
 
             ChapterPage chapterPage = parseChapterPage(data);
             if (chapterPage == null) {
                 acknowledgeCallback(callbackQuery, "Unable to open chapter page.");
+                analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(), data, false, occurredAt);
                 return;
             }
 
@@ -369,12 +477,14 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             BibleVerse verse = bibleService.getVerse(reference);
             if (verse == null || verse.getText() == null || verse.getText().isBlank()) {
                 acknowledgeCallback(callbackQuery, "Unable to load that chapter.");
+                analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(), data, false, occurredAt);
                 return;
             }
 
             List<String> chunks = MessageSplitter.split(verse.formatForTelegram());
             if (chunks.isEmpty()) {
                 acknowledgeCallback(callbackQuery, null);
+                analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(), data, false, occurredAt);
                 return;
             }
 
@@ -389,10 +499,13 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
             execute(editMessage);
             acknowledgeCallback(callbackQuery, "Page " + (page + 1) + " of " + chunks.size());
+            analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(), data, true, occurredAt);
             logger.info("Edited inline chapter {} to page {}", reference.toDisplayString(), page + 1);
         } catch (Exception e) {
             logger.warn("Failed to handle inline chapter pagination", e);
             acknowledgeCallback(callbackQuery, "Unable to open chapter page.");
+            analyticsTrackingService.trackCallbackInteraction(updateId, chat, callbackQuery.getFrom(),
+                    callbackQuery.getData(), false, occurredAt);
         }
     }
 
@@ -541,15 +654,26 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
         return lower.startsWith("/search") || lower.startsWith("search ");
     }
 
+    private boolean isStartCommand(String messageText) {
+        if (messageText == null) return false;
+        String lower = messageText.toLowerCase().trim();
+        return lower.startsWith("/start");
+    }
+
     /**
      * Handle /search command — find verses matching a quote or phrase
      */
-    private void handleSearchCommand(Long chatId, String messageText, User user) {
+    private void handleSearchCommand(Integer updateId, Chat chat, Long chatId, String messageText,
+                                     User user, Instant occurredAt) {
         // Extract the search query
         String query = messageText.replaceAll("(?i)^/?search(@\\w+)?\\s*", "").trim();
 
         if (query.isEmpty()) {
             sendMessage(chatId, "Please provide a phrase to search for.\n\nExample: <code>/search For God so loved the world</code>");
+            analyticsTrackingService.trackMessageInteraction(
+                    updateId, chat, user, messageText, AnalyticsEventType.SEARCH_REQUEST,
+                    false, 0L, null, occurredAt
+            );
             return;
         }
 
@@ -561,6 +685,10 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
             if (results.isEmpty()) {
                 sendMessage(chatId, "No verses found matching: <i>" + escapeHtml(query) + "</i>");
+                analyticsTrackingService.trackMessageInteraction(
+                        updateId, chat, user, messageText, AnalyticsEventType.SEARCH_REQUEST,
+                        true, System.currentTimeMillis() - startTime, null, occurredAt
+                );
                 return;
             }
 
@@ -582,11 +710,19 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
             }
 
             long responseTime = System.currentTimeMillis() - startTime;
+            analyticsTrackingService.trackMessageInteraction(
+                    updateId, chat, user, messageText, AnalyticsEventType.SEARCH_REQUEST,
+                    true, responseTime, topResult.getReference(), occurredAt
+            );
             logger.info("Search completed for '{}' in chat {} in {}ms ({} results)",
                     query, chatId, responseTime, results.size());
 
         } catch (Exception e) {
             sendMessage(chatId, "Sorry, I encountered an issue searching. Please try again.");
+            analyticsTrackingService.trackMessageInteraction(
+                    updateId, chat, user, messageText, AnalyticsEventType.SEARCH_REQUEST,
+                    false, System.currentTimeMillis() - startTime, null, occurredAt
+            );
             logger.error("Error in search for '{}' in chat {}", query, chatId, e);
         }
     }
@@ -673,12 +809,18 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     /**
      * Handle invalid reference format
      */
-    private void handleInvalidReference(Long chatId, long startTime, BotRequest request) {
+    private void handleInvalidReference(Integer updateId, Chat chat, User user, Long chatId,
+                                        long startTime, BotRequest request, String messageText,
+                                        Instant occurredAt) {
         String errorMsg = "Please provide a valid Bible reference (e.g., John 3:16)";
         sendMessage(chatId, errorMsg);
 
         long responseTime = System.currentTimeMillis() - startTime;
         loggingService.logFailure(request, "Invalid reference format", responseTime);
+        analyticsTrackingService.trackMessageInteraction(
+                updateId, chat, user, messageText, AnalyticsEventType.VERSE_REQUEST,
+                false, responseTime, null, occurredAt
+        );
 
         logger.warn("Invalid reference in chat {}", chatId);
     }
@@ -686,13 +828,17 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     /**
      * Handle verse fetch failure
      */
-    private void handleFetchFailure(Long chatId, BibleReference reference,
-                                    long startTime, BotRequest request) {
+    private void handleFetchFailure(Integer updateId, Chat chat, User user, Long chatId, BibleReference reference,
+                                    long startTime, BotRequest request, String messageText, Instant occurredAt) {
         String errorMsg = "Unable to retrieve " + reference.toDisplayString() + " please check your scripture's spelling and try again";
         sendMessage(chatId, errorMsg);
 
         long responseTime = System.currentTimeMillis() - startTime;
         loggingService.logFailure(request, "Verse fetch failed", responseTime);
+        analyticsTrackingService.trackMessageInteraction(
+                updateId, chat, user, messageText, AnalyticsEventType.VERSE_REQUEST,
+                false, responseTime, reference.toDisplayString(), occurredAt
+        );
 
         logger.error("Failed to fetch verse {} for chat {}", reference.toDisplayString(), chatId);
     }
@@ -700,13 +846,70 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
     /**
      * Handle general errors
      */
-    private void handleGeneralError(Long chatId, long startTime, BotRequest request, Exception e) {
+    private void handleGeneralError(Integer updateId, Chat chat, User user, Long chatId, long startTime,
+                                    BotRequest request, Exception e, String messageText, Instant occurredAt) {
         String errorMsg = "Sorry, I encountered an issue. Please try again";
         sendMessage(chatId, errorMsg);
 
         long responseTime = System.currentTimeMillis() - startTime;
         loggingService.logFailure(request, e.getMessage(), responseTime);
+        analyticsTrackingService.trackMessageInteraction(
+                updateId, chat, user, messageText, AnalyticsEventType.VERSE_REQUEST,
+                false, responseTime, null, occurredAt
+        );
 
         logger.error("Error processing message in chat {}", chatId, e);
+    }
+
+    private void handleMyChatMemberUpdate(Integer updateId, ChatMemberUpdated membershipUpdate) {
+        String oldStatus = membershipUpdate.getOldChatMember() != null
+                ? membershipUpdate.getOldChatMember().getStatus()
+                : null;
+        String newStatus = membershipUpdate.getNewChatMember() != null
+                ? membershipUpdate.getNewChatMember().getStatus()
+                : null;
+
+        if (!isMembershipTransitionRelevant(oldStatus, newStatus)) {
+            return;
+        }
+
+        analyticsTrackingService.trackMembershipUpdate(
+                updateId,
+                membershipUpdate.getChat(),
+                membershipUpdate.getFrom(),
+                oldStatus,
+                newStatus,
+                toInstant(membershipUpdate.getDate())
+        );
+
+        logger.info("Bot membership changed in chat {} from {} to {}",
+                membershipUpdate.getChat().getId(), oldStatus, newStatus);
+    }
+
+    private boolean isMembershipTransitionRelevant(String oldStatus, String newStatus) {
+        boolean wasActive = isActiveMembershipStatus(oldStatus);
+        boolean isActive = isActiveMembershipStatus(newStatus);
+        return wasActive != isActive;
+    }
+
+    private boolean isActiveMembershipStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        return switch (status.toLowerCase()) {
+            case "member", "administrator", "restricted" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isPrivateChat(Chat chat) {
+        return chat != null && "private".equalsIgnoreCase(chat.getType());
+    }
+
+    private Instant toInstant(Integer telegramEpochSeconds) {
+        if (telegramEpochSeconds == null || telegramEpochSeconds <= 0) {
+            return Instant.now();
+        }
+        return Instant.ofEpochSecond(telegramEpochSeconds.longValue());
     }
 }
