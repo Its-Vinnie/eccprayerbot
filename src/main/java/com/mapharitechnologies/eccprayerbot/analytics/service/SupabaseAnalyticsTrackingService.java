@@ -2,9 +2,13 @@ package com.mapharitechnologies.eccprayerbot.analytics.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatDetail;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatSummary;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatUserUsage;
 import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsCounterDelta;
 import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsDashboardSummary;
 import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsEventType;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsPage;
 import com.mapharitechnologies.eccprayerbot.analytics.model.TopChatUsage;
 import com.mapharitechnologies.eccprayerbot.analytics.model.TopUserUsage;
 import org.slf4j.Logger;
@@ -25,7 +29,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Production analytics writer backed by Supabase Postgres.
@@ -143,6 +149,119 @@ public class SupabaseAnalyticsTrackingService implements AnalyticsTrackingServic
                         LIMIT :limit
                         """, Map.of("limit", topLimit), topChatMapper())
         );
+    }
+
+    @Override
+    public AnalyticsPage<AnalyticsChatSummary> listChats(String type, Boolean active, String search,
+                                                         boolean includePrivate, int limit, int offset) {
+        int safeLimit = normalizeLimit(limit, 20, 100);
+        int safeOffset = Math.max(offset, 0);
+        String normalizedType = emptyToNull(type);
+        String normalizedSearch = emptyToNull(search);
+
+        StringBuilder whereClause = new StringBuilder(" WHERE 1 = 1");
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("limit", safeLimit)
+                .addValue("offset", safeOffset);
+
+        if (normalizedType != null) {
+            whereClause.append(" AND chat_type = :chat_type");
+            params.addValue("chat_type", normalizedType.toLowerCase());
+        } else if (!includePrivate) {
+            whereClause.append(" AND chat_type IN (:visible_types)");
+            params.addValue("visible_types", List.of("group", "supergroup", "channel"));
+        }
+
+        if (active != null) {
+            whereClause.append(" AND is_active = :active");
+            params.addValue("active", active);
+        }
+
+        if (normalizedSearch != null) {
+            whereClause.append("""
+                     AND (
+                         LOWER(COALESCE(title, '')) LIKE :search
+                         OR LOWER(COALESCE(username, '')) LIKE :search
+                     )
+                    """);
+            params.addValue("search", "%" + normalizedSearch.toLowerCase() + "%");
+        }
+
+        long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM telegram_chats" + whereClause,
+                params,
+                Long.class
+        );
+
+        List<AnalyticsChatSummary> items = jdbcTemplate.query("""
+                SELECT telegram_chat_id, title, username, chat_type, is_active, first_seen_at,
+                       last_seen_at, bot_added_at, bot_removed_at, total_interaction_count,
+                       verse_request_count, search_count, successful_interaction_count,
+                       failed_interaction_count
+                FROM telegram_chats
+                """ + whereClause + """
+                ORDER BY last_seen_at DESC, telegram_chat_id DESC
+                LIMIT :limit OFFSET :offset
+                """, params, chatSummaryMapper());
+
+        return new AnalyticsPage<>(items, total, safeLimit, safeOffset);
+    }
+
+    @Override
+    public Optional<AnalyticsChatDetail> getChatDetail(long telegramChatId) {
+        List<AnalyticsChatDetail> items = jdbcTemplate.query("""
+                SELECT telegram_chat_id, title, username, chat_type, is_active, first_seen_at,
+                       last_seen_at, bot_added_at, bot_removed_at, total_interaction_count,
+                       verse_request_count, search_count, inline_query_count, callback_query_count,
+                       successful_interaction_count, failed_interaction_count
+                FROM telegram_chats
+                WHERE telegram_chat_id = :telegram_chat_id
+                LIMIT 1
+                """, Map.of("telegram_chat_id", telegramChatId), chatDetailMapper());
+
+        return items.stream().findFirst();
+    }
+
+    @Override
+    public AnalyticsPage<AnalyticsChatUserUsage> listChatUsers(long telegramChatId, int limit, int offset) {
+        int safeLimit = normalizeLimit(limit, 20, 100);
+        int safeOffset = Math.max(offset, 0);
+        Long chatId = jdbcTemplate.query("""
+                SELECT id
+                FROM telegram_chats
+                WHERE telegram_chat_id = :telegram_chat_id
+                LIMIT 1
+                """, Map.of("telegram_chat_id", telegramChatId), rs -> rs.next() ? rs.getLong("id") : null);
+
+        if (chatId == null) {
+            return new AnalyticsPage<>(List.of(), 0, safeLimit, safeOffset);
+        }
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("chat_id", chatId)
+                .addValue("limit", safeLimit)
+                .addValue("offset", safeOffset);
+
+        long total = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM telegram_chat_user_stats
+                WHERE chat_id = :chat_id
+                """, params, Long.class);
+
+        List<AnalyticsChatUserUsage> items = jdbcTemplate.query("""
+                SELECT u.telegram_user_id, u.username, u.first_name, u.last_name,
+                       s.first_interaction_at, s.last_interaction_at, s.total_interaction_count,
+                       s.verse_request_count, s.search_count, s.inline_query_count,
+                       s.callback_query_count, s.successful_interaction_count,
+                       s.failed_interaction_count
+                FROM telegram_chat_user_stats s
+                JOIN telegram_users u ON u.id = s.user_id
+                WHERE s.chat_id = :chat_id
+                ORDER BY s.total_interaction_count DESC, s.last_interaction_at DESC, u.telegram_user_id DESC
+                LIMIT :limit OFFSET :offset
+                """, params, chatUserUsageMapper());
+
+        return new AnalyticsPage<>(items, total, safeLimit, safeOffset);
     }
 
     private void persistEvent(Integer updateId, Chat chat, User user, AnalyticsEventType eventType,
@@ -418,6 +537,76 @@ public class SupabaseAnalyticsTrackingService implements AnalyticsTrackingServic
             log.warn("Failed to serialize analytics metadata", e);
             return "{}";
         }
+    }
+
+    private int normalizeLimit(int requestedLimit, int defaultLimit, int maxLimit) {
+        if (requestedLimit < 1) {
+            return defaultLimit;
+        }
+        return Math.min(requestedLimit, maxLimit);
+    }
+
+    private Instant instant(ResultSet rs, String columnName) throws SQLException {
+        Timestamp timestamp = rs.getTimestamp(columnName);
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    private RowMapper<AnalyticsChatSummary> chatSummaryMapper() {
+        return (rs, rowNum) -> new AnalyticsChatSummary(
+                rs.getLong("telegram_chat_id"),
+                rs.getString("title"),
+                rs.getString("username"),
+                rs.getString("chat_type"),
+                rs.getBoolean("is_active"),
+                instant(rs, "first_seen_at"),
+                instant(rs, "last_seen_at"),
+                instant(rs, "bot_added_at"),
+                instant(rs, "bot_removed_at"),
+                rs.getLong("total_interaction_count"),
+                rs.getLong("verse_request_count"),
+                rs.getLong("search_count"),
+                rs.getLong("successful_interaction_count"),
+                rs.getLong("failed_interaction_count")
+        );
+    }
+
+    private RowMapper<AnalyticsChatDetail> chatDetailMapper() {
+        return (rs, rowNum) -> new AnalyticsChatDetail(
+                rs.getLong("telegram_chat_id"),
+                rs.getString("title"),
+                rs.getString("username"),
+                rs.getString("chat_type"),
+                rs.getBoolean("is_active"),
+                instant(rs, "first_seen_at"),
+                instant(rs, "last_seen_at"),
+                instant(rs, "bot_added_at"),
+                instant(rs, "bot_removed_at"),
+                rs.getLong("total_interaction_count"),
+                rs.getLong("verse_request_count"),
+                rs.getLong("search_count"),
+                rs.getLong("inline_query_count"),
+                rs.getLong("callback_query_count"),
+                rs.getLong("successful_interaction_count"),
+                rs.getLong("failed_interaction_count")
+        );
+    }
+
+    private RowMapper<AnalyticsChatUserUsage> chatUserUsageMapper() {
+        return (rs, rowNum) -> new AnalyticsChatUserUsage(
+                rs.getLong("telegram_user_id"),
+                rs.getString("username"),
+                rs.getString("first_name"),
+                rs.getString("last_name"),
+                instant(rs, "first_interaction_at"),
+                instant(rs, "last_interaction_at"),
+                rs.getLong("total_interaction_count"),
+                rs.getLong("verse_request_count"),
+                rs.getLong("search_count"),
+                rs.getLong("inline_query_count"),
+                rs.getLong("callback_query_count"),
+                rs.getLong("successful_interaction_count"),
+                rs.getLong("failed_interaction_count")
+        );
     }
 
     private RowMapper<TopUserUsage> topUserMapper() {

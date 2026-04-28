@@ -1,6 +1,10 @@
 package com.mapharitechnologies.eccprayerbot.analytics.service;
 
 import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsDashboardSummary;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatDetail;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatSummary;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsChatUserUsage;
+import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsPage;
 import com.mapharitechnologies.eccprayerbot.analytics.model.AnalyticsEventType;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -8,6 +12,8 @@ import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.User;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Fallback analytics implementation used when Supabase tracking is disabled.
@@ -49,5 +55,21 @@ public class NoOpAnalyticsTrackingService implements AnalyticsTrackingService {
     @Override
     public AnalyticsDashboardSummary getDashboardSummary(int topLimit) {
         return AnalyticsDashboardSummary.disabled();
+    }
+
+    @Override
+    public AnalyticsPage<AnalyticsChatSummary> listChats(String type, Boolean active, String search,
+                                                         boolean includePrivate, int limit, int offset) {
+        return new AnalyticsPage<>(List.of(), 0, limit, offset);
+    }
+
+    @Override
+    public Optional<AnalyticsChatDetail> getChatDetail(long telegramChatId) {
+        return Optional.empty();
+    }
+
+    @Override
+    public AnalyticsPage<AnalyticsChatUserUsage> listChatUsers(long telegramChatId, int limit, int offset) {
+        return new AnalyticsPage<>(List.of(), 0, limit, offset);
     }
 }
