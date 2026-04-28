@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
@@ -16,7 +18,7 @@ import javax.sql.DataSource;
  * Configures the optional Supabase/Postgres analytics data source.
  */
 @Configuration
-@EnableConfigurationProperties(AnalyticsProperties.class)
+@EnableConfigurationProperties({AnalyticsProperties.class, AnalyticsBackfillProperties.class})
 @ConditionalOnProperty(prefix = "analytics.supabase", name = "enabled", havingValue = "true")
 public class AnalyticsDataSourceConfig {
 
@@ -59,6 +61,12 @@ public class AnalyticsDataSourceConfig {
     @Bean
     public NamedParameterJdbcTemplate analyticsJdbcTemplate(DataSource analyticsDataSource, Flyway analyticsFlyway) {
         return new NamedParameterJdbcTemplate(analyticsDataSource);
+    }
+
+    @Bean
+    public PlatformTransactionManager analyticsTransactionManager(DataSource analyticsDataSource,
+                                                                  Flyway analyticsFlyway) {
+        return new DataSourceTransactionManager(analyticsDataSource);
     }
 
 }
