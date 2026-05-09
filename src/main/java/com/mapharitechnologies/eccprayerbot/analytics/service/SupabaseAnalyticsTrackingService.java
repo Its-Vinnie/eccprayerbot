@@ -359,7 +359,7 @@ public class SupabaseAnalyticsTrackingService implements AnalyticsTrackingServic
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("telegram_chat_id", chat.getId())
-                .addValue("chat_type", emptyToNull(chat.getType()))
+                .addValue("chat_type", deriveChatType(chat, user))
                 .addValue("title", deriveChatTitle(chat, user))
                 .addValue("username", emptyToNull(chat.getUserName()))
                 .addValue("is_active", active)
@@ -504,7 +504,7 @@ public class SupabaseAnalyticsTrackingService implements AnalyticsTrackingServic
     }
 
     private boolean isPrivateChat(Chat chat) {
-        return chat != null && "private".equalsIgnoreCase(chat.getType());
+        return chat != null && "private".equalsIgnoreCase(deriveChatType(chat, null));
     }
 
     private Timestamp timestamp(Instant instant) {
@@ -524,6 +524,30 @@ public class SupabaseAnalyticsTrackingService implements AnalyticsTrackingServic
             return emptyToNull(fullName.trim());
         }
         return null;
+    }
+
+    private String deriveChatType(Chat chat, User user) {
+        if (chat == null) {
+            return null;
+        }
+        String chatType = emptyToNull(chat.getType());
+        if (chatType != null) {
+            return chatType.toLowerCase();
+        }
+        Long chatId = chat.getId();
+        if (chatId == null) {
+            return "unknown";
+        }
+        if (user != null && chatId.equals(user.getId())) {
+            return "private";
+        }
+        if (chatId <= -100_000_000_000L) {
+            return "supergroup";
+        }
+        if (chatId < 0) {
+            return "group";
+        }
+        return "private";
     }
 
     private String emptyToNull(String value) {

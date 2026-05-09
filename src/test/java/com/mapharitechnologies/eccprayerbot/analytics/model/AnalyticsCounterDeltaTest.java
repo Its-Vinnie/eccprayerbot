@@ -38,4 +38,15 @@ class AnalyticsCounterDeltaTest {
         assertEquals(0, delta.successfulInteractions());
         assertEquals(0, delta.failedInteractions());
     }
+
+    @Test
+    void shouldNotIncrementUsageCountersForGroupMessages() {
+        AnalyticsCounterDelta delta = AnalyticsCounterDelta.from(AnalyticsEventType.GROUP_MESSAGE, null);
+
+        assertEquals(0, delta.totalInteractions());
+        assertEquals(0, delta.verseRequests());
+        assertEquals(0, delta.searches());
+        assertEquals(0, delta.successfulInteractions());
+        assertEquals(0, delta.failedInteractions());
+    }
 }

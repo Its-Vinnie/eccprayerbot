@@ -6,6 +6,7 @@ package com.mapharitechnologies.eccprayerbot.analytics.model;
 public enum AnalyticsEventType {
     START_COMMAND,
     PRIVATE_MESSAGE,
+    GROUP_MESSAGE,
     VERSE_REQUEST,
     SEARCH_REQUEST,
     INLINE_QUERY,
@@ -16,7 +17,7 @@ public enum AnalyticsEventType {
     public boolean incrementsTotalInteractions() {
         return switch (this) {
             case START_COMMAND, PRIVATE_MESSAGE, VERSE_REQUEST, SEARCH_REQUEST, INLINE_QUERY, CALLBACK_QUERY -> true;
-            case BOT_ADDED_TO_CHAT, BOT_REMOVED_FROM_CHAT -> false;
+            case GROUP_MESSAGE, BOT_ADDED_TO_CHAT, BOT_REMOVED_FROM_CHAT -> false;
         };
     }
 

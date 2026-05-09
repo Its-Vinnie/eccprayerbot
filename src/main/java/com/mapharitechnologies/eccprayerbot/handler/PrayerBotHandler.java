@@ -173,6 +173,18 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
                         null,
                         occurredAt
                 );
+            } else if (isGroupChat(chat)) {
+                analyticsTrackingService.trackMessageInteraction(
+                        update.getUpdateId(),
+                        chat,
+                        user,
+                        null,
+                        AnalyticsEventType.GROUP_MESSAGE,
+                        null,
+                        0L,
+                        null,
+                        occurredAt
+                );
             }
             return;
         }
@@ -904,6 +916,18 @@ public class PrayerBotHandler extends TelegramLongPollingBot {
 
     private boolean isPrivateChat(Chat chat) {
         return chat != null && "private".equalsIgnoreCase(chat.getType());
+    }
+
+    private boolean isGroupChat(Chat chat) {
+        if (chat == null) {
+            return false;
+        }
+        String chatType = chat.getType();
+        if ("group".equalsIgnoreCase(chatType) || "supergroup".equalsIgnoreCase(chatType)
+                || "channel".equalsIgnoreCase(chatType)) {
+            return true;
+        }
+        return chat.getId() != null && chat.getId() < 0;
     }
 
     private Instant toInstant(Integer telegramEpochSeconds) {
