@@ -33,14 +33,22 @@ public class EccPrayerBotApplication {
             }
         });
 
-        // Disable Mongo auto-config if no MongoDB URI is provided.
-        String mongoUri = System.getProperty("MONGODB_URI");
+        // Railway exposes variables as environment variables, while dotenv values are copied to system properties.
+        String mongoUri = firstText(System.getProperty("MONGODB_URI"), System.getenv("MONGODB_URI"));
         if (mongoUri == null || mongoUri.isBlank()) {
             String exclude = "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration";
+                    + "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration,"
+                    + "org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration";
             System.setProperty("spring.autoconfigure.exclude", exclude);
         }
 
         SpringApplication.run(EccPrayerBotApplication.class, args);
+    }
+
+    private static String firstText(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 }

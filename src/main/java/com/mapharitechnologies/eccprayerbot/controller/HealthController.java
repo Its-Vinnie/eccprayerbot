@@ -1,7 +1,6 @@
 package com.mapharitechnologies.eccprayerbot.controller;
 
 import com.mapharitechnologies.eccprayerbot.analytics.service.AnalyticsTrackingService;
-import com.mapharitechnologies.eccprayerbot.service.BibleService;
 import com.mapharitechnologies.eccprayerbot.service.RequestLoggingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,13 +17,11 @@ import java.util.Map;
 @RequestMapping("/api")
 public class HealthController {
 
-    private final BibleService bibleService;
     private final RequestLoggingService loggingService;
     private final AnalyticsTrackingService analyticsTrackingService;
 
-    public HealthController(BibleService bibleService, RequestLoggingService loggingService,
+    public HealthController(RequestLoggingService loggingService,
                             AnalyticsTrackingService analyticsTrackingService) {
-        this.bibleService = bibleService;
         this.loggingService = loggingService;
         this.analyticsTrackingService = analyticsTrackingService;
     }
@@ -33,22 +30,11 @@ public class HealthController {
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> health = new HashMap<>();
 
-        boolean apiHealthy = bibleService.isHealthy();
-        boolean dbHealthy = true;
-        try {
-            // Simple check to see if we can reach MongoDB
-            // This won't throw even if DB is down because we handled it in service, 
-            // but here we check directly to report status
-            dbHealthy = loggingService.getSuccessRate() >= 0; 
-        } catch (Exception e) {
-            dbHealthy = false;
-        }
-
-        health.put("status", apiHealthy ? "UP" : "DOWN");
+        health.put("status", "UP");
         health.put("bot", "ECCPrayerBot");
         health.put("version", "1.0.0-MVP");
-        health.put("bibleApiStatus", apiHealthy ? "AVAILABLE" : "UNAVAILABLE");
-        health.put("databaseStatus", dbHealthy ? "CONNECTED" : "DISCONNECTED");
+        health.put("bibleApiStatus", "NOT_CHECKED");
+        health.put("databaseStatus", "NOT_CHECKED");
         health.put("analyticsStatus", analyticsTrackingService.isEnabled() ? "ENABLED" : "DISABLED");
 
         return ResponseEntity.ok(health);
