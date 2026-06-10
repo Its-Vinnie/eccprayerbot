@@ -13,6 +13,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Configures the optional Supabase/Postgres analytics data source.
@@ -28,10 +32,12 @@ public class AnalyticsDataSourceConfig {
             throw new IllegalStateException("analytics.supabase.jdbc-url must be configured when analytics is enabled");
         }
 
+        NormalizedJdbcUrl normalizedJdbcUrl = normalizeJdbcUrl(properties.getJdbcUrl());
+
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(properties.getJdbcUrl());
-        config.setUsername(properties.getUsername());
-        config.setPassword(properties.getPassword());
+        config.setJdbcUrl(normalizedJdbcUrl.jdbcUrl());
+        config.setUsername(firstText(properties.getUsername(), normalizedJdbcUrl.username()));
+        config.setPassword(firstText(properties.getPassword(), normalizedJdbcUrl.password()));
         config.setMaximumPoolSize(properties.getMaximumPoolSize());
         config.setMinimumIdle(properties.getMinimumIdle());
         config.setConnectionTimeout(properties.getConnectionTimeoutMs());
@@ -67,6 +73,56 @@ public class AnalyticsDataSourceConfig {
     public PlatformTransactionManager analyticsTransactionManager(DataSource analyticsDataSource,
                                                                   Flyway analyticsFlyway) {
         return new DataSourceTransactionManager(analyticsDataSource);
+    }
+
+    static NormalizedJdbcUrl normalizeJdbcUrl(String configuredUrl) {
+        String url = configuredUrl.trim();
+        if (url.startsWith("jdbc:postgresql://")) {
+            return new NormalizedJdbcUrl(url, null, null);
+        }
+
+        if (url.startsWith("postgresql://") || url.startsWith("postgres://")) {
+            try {
+                URI uri = new URI(url);
+                String rawUserInfo = uri.getRawUserInfo();
+                String username = null;
+                String password = null;
+                if (StringUtils.hasText(rawUserInfo)) {
+                    String[] credentials = rawUserInfo.split(":", 2);
+                    username = decode(credentials[0]);
+                    if (credentials.length > 1) {
+                        password = decode(credentials[1]);
+                    }
+                }
+
+                StringBuilder jdbcUrl = new StringBuilder("jdbc:postgresql://");
+                jdbcUrl.append(uri.getHost());
+                if (uri.getPort() > -1) {
+                    jdbcUrl.append(':').append(uri.getPort());
+                }
+                jdbcUrl.append(StringUtils.hasText(uri.getRawPath()) ? uri.getRawPath() : "/postgres");
+                if (StringUtils.hasText(uri.getRawQuery())) {
+                    jdbcUrl.append('?').append(uri.getRawQuery());
+                }
+
+                return new NormalizedJdbcUrl(jdbcUrl.toString(), username, password);
+            } catch (URISyntaxException ex) {
+                throw new IllegalArgumentException("Invalid analytics.supabase.jdbc-url", ex);
+            }
+        }
+
+        return new NormalizedJdbcUrl(url, null, null);
+    }
+
+    private static String firstText(String configuredValue, String fallbackValue) {
+        return StringUtils.hasText(configuredValue) ? configuredValue : fallbackValue;
+    }
+
+    private static String decode(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    record NormalizedJdbcUrl(String jdbcUrl, String username, String password) {
     }
 
 }
