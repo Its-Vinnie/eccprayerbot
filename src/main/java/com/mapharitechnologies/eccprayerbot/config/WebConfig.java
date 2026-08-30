@@ -5,16 +5,23 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.concurrent.Executor;
 
 /**
- * Web and async configuration
+ * Web, async, and API interceptor configuration.
  */
 @Configuration
 @EnableAsync
 public class WebConfig implements WebMvcConfigurer {
+
+    private final ApiKeyInterceptor apiKeyInterceptor;
+
+    public WebConfig(ApiKeyInterceptor apiKeyInterceptor) {
+        this.apiKeyInterceptor = apiKeyInterceptor;
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
@@ -22,6 +29,13 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins("*")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(apiKeyInterceptor)
+                .addPathPatterns("/api/v1/**")
+                .excludePathPatterns("/api/v1/health");
     }
 
     /**
