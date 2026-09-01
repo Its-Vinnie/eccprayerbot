@@ -396,13 +396,13 @@ public class BibleApiController {
                         new ErrorResponse(404, "Not Found", "Could not fetch random verse."));
             }
 
-            boolean forwarded = telegramMessageService.sendVerse(request.chatId(), bibleVerse);
+            telegramMessageService.sendVerse(request.chatId(), bibleVerse);
             ForwardResponse response = new ForwardResponse(
                     bibleVerse.getReference(),
                     stripHtml(bibleVerse.getText()),
                     bibleVerse.getTranslation(),
                     request.chatId(),
-                    forwarded
+                    true
             );
             return ResponseEntity.ok(response);
         }
@@ -430,15 +430,15 @@ public class BibleApiController {
                             "Content not found: " + reference.toDisplayString()));
         }
 
-        // Send to Telegram (async — doesn't block the response)
-        boolean forwarded = telegramMessageService.sendVerse(request.chatId(), bibleVerse);
+        // Send to Telegram (async — fire-and-forget)
+        telegramMessageService.sendVerse(request.chatId(), bibleVerse);
 
         ForwardResponse response = new ForwardResponse(
                 bibleVerse.getReference(),
                 stripHtml(bibleVerse.getText()),
                 bibleVerse.getTranslation(),
                 request.chatId(),
-                forwarded
+                true
         );
 
         return ResponseEntity.ok(response);
@@ -523,7 +523,8 @@ public class BibleApiController {
             if (verse != null && verse.getText() != null && !verse.getText().isBlank()) {
                 Boolean forwarded = null;
                 if (chatId != null && !chatId.isBlank()) {
-                    forwarded = telegramMessageService.sendVerse(chatId, verse);
+                    telegramMessageService.sendVerse(chatId, verse);
+                    forwarded = true;
                 }
                 return ResponseEntity.ok(new QueryResponse(
                         "random", verse.getReference(), stripHtml(verse.getText()),
@@ -551,7 +552,8 @@ public class BibleApiController {
 
         Boolean forwarded = null;
         if (chatId != null && !chatId.isBlank()) {
-            forwarded = telegramMessageService.sendVerse(chatId, verse);
+            telegramMessageService.sendVerse(chatId, verse);
+            forwarded = true;
         }
 
         String type = "verse";
@@ -587,7 +589,8 @@ public class BibleApiController {
         // If chatId provided, forward the top result
         Boolean forwarded = null;
         if (chatId != null && !chatId.isBlank() && !results.isEmpty()) {
-            forwarded = telegramMessageService.sendVerse(chatId, results.get(0));
+            telegramMessageService.sendVerse(chatId, results.get(0));
+            forwarded = true;
         }
 
         String ref = searchResults.get(0).reference();

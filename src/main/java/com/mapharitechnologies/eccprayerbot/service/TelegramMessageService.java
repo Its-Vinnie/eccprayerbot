@@ -28,13 +28,13 @@ public class TelegramMessageService {
 
     /**
      * Send a Bible verse to a Telegram chat asynchronously.
+     * Fire-and-forget — failures are logged but never propagate.
      *
      * @param chatId the Telegram chat ID (user private chat or group)
      * @param verse  the Bible verse to send
-     * @return true if sent successfully, false otherwise
      */
     @Async
-    public boolean sendVerse(String chatId, BibleVerse verse) {
+    public void sendVerse(String chatId, BibleVerse verse) {
         try {
             String text = verse.formatForTelegram();
             List<String> chunks = splitMessage(text);
@@ -50,22 +50,20 @@ public class TelegramMessageService {
             }
 
             log.info("Sent verse {} to chat {}", verse.getReference(), chatId);
-            return true;
-        } catch (TelegramApiException e) {
-            log.error("Failed to send verse to chat {}: {}", chatId, e.getMessage());
-            return false;
+        } catch (Exception e) {
+            log.error("Failed to send verse to chat {}: {}", chatId, e.getMessage(), e);
         }
     }
 
     /**
      * Send a plain text message to a Telegram chat asynchronously.
+     * Fire-and-forget — failures are logged but never propagate.
      *
      * @param chatId the Telegram chat ID
      * @param text   the message text (HTML formatting supported)
-     * @return true if sent successfully, false otherwise
      */
     @Async
-    public boolean sendMessage(String chatId, String text) {
+    public void sendMessage(String chatId, String text) {
         try {
             SendMessage message = SendMessage.builder()
                     .chatId(chatId)
@@ -76,10 +74,8 @@ public class TelegramMessageService {
             botHandler.execute(message);
 
             log.info("Sent message to chat {}", chatId);
-            return true;
-        } catch (TelegramApiException e) {
-            log.error("Failed to send message to chat {}: {}", chatId, e.getMessage());
-            return false;
+        } catch (Exception e) {
+            log.error("Failed to send message to chat {}: {}", chatId, e.getMessage(), e);
         }
     }
 
