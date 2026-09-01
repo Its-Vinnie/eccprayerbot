@@ -8,9 +8,14 @@ import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.ErrorResponse;
 import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.SearchResponse;
 import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.SearchResult;
 import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.TranslationResponse;
+import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.ForwardRequest;
+import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.ForwardResponse;
+import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.QueryRequest;
+import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.QueryResponse;
 import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.VerseResponse;
 import com.mapharitechnologies.eccprayerbot.model.dto.ApiDtos.VerseResult;
 import com.mapharitechnologies.eccprayerbot.service.BibleService;
+import com.mapharitechnologies.eccprayerbot.service.TelegramMessageService;
 import com.mapharitechnologies.eccprayerbot.util.BibleReferenceParser;
 import com.mapharitechnologies.eccprayerbot.util.ChapterTextParser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,15 +30,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 /**
  * REST API for Bible data — serves Mount Zion and any future consumer apps.
@@ -51,10 +54,13 @@ public class BibleApiController {
 
     private final BibleService bibleService;
     private final BibleReferenceParser referenceParser;
+    private final TelegramMessageService telegramMessageService;
 
-    public BibleApiController(BibleService bibleService, BibleReferenceParser referenceParser) {
+    public BibleApiController(BibleService bibleService, BibleReferenceParser referenceParser,
+                             TelegramMessageService telegramMessageService) {
         this.bibleService = bibleService;
         this.referenceParser = referenceParser;
+        this.telegramMessageService = telegramMessageService;
     }
 
     // ─── GET /verse ──────────────────────────────────────────────────────
@@ -265,6 +271,332 @@ public class BibleApiController {
     @GetMapping("/translations")
     public ResponseEntity<List<TranslationResponse>> getTranslations() {
         return ResponseEntity.ok(SUPPORTED_TRANSLATIONS);
+    }
+
+    // ─── GET /random ─────────────────────────────────────────────────────
+
+    private static final String[][] POPULAR_VERSES = {
+            {"John 3:16", "KJV"}, {"Jeremiah 29:11", "KJV"}, {"Philippians 4:13", "KJV"},
+            {"Romans 8:28", "KJV"}, {"Proverbs 3:5-6", "KJV"}, {"Isaiah 41:10", "KJV"},
+            {"Psalm 23:1", "KJV"}, {"Romans 12:2", "KJV"}, {"Matthew 28:19-20", "KJV"},
+            {"2 Timothy 1:7", "KJV"}, {"Ephesians 2:8-9", "KJV"}, {"Joshua 1:9", "KJV"},
+            {"Psalm 46:10", "KJV"}, {"Hebrews 11:1", "KJV"}, {"Galatians 5:22-23", "KJV"},
+            {"1 Corinthians 13:4-7", "KJV"}, {"Matthew 11:28-30", "KJV"}, {"Psalm 119:105", "KJV"},
+            {"Romans 8:38-39", "KJV"}, {"Micah 6:8", "KJV"}, {"James 1:2-4", "KJV"},
+            {"Colossians 3:23", "KJV"}, {"2 Corinthians 5:17", "KJV"}, {"Psalm 37:4", "KJV"},
+            {"Proverbs 22:6", "KJV"}, {"Matthew 6:33", "KJV"}, {"Isaiah 53:5", "KJV"},
+            {"1 Peter 5:7", "KJV"}, {"Psalm 91:1-2", "KJV"}, {"John 14:27", "KJV"},
+            {"Romans 5:8", "KJV"}, {"2 Timothy 3:16", "KJV"}, {"Psalm 139:14", "KJV"},
+            {"Matthew 5:16", "KJV"}, {"Philippians 2:3-4", "KJV"}, {"Psalm 34:18", "KJV"},
+            {"John 15:5", "KJV"}, {"Hebrews 13:8", "KJV"}, {"1 John 4:19", "KJV"},
+            {"Psalm 27:1", "KJV"}, {"Isaiah 40:31", "KJV"}, {"Matthew 11:28", "KJV"},
+            {"John 10:10", "KJV"}, {"Psalm 51:10", "KJV"}, {"Romans 12:1", "KJV"},
+            {"Galatians 2:20", "KJV"}, {"Ephesians 6:10", "KJV"}, {"Psalm 16:11", "KJV"},
+            {"John 8:32", "KJV"}, {"1 Thessalonians 5:16-18", "KJV"}
+    };
+
+    @Operation(
+            summary = "Fetch a random Bible verse",
+            description = "Returns a random popular Bible verse. Optionally specify a translation. "
+                    + "Useful for daily devotionals, inspiration, or discovery.",
+            security = @SecurityRequirement(name = "API Key")
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Random verse found",
+                    content = @Content(schema = @Schema(implementation = VerseResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Could not fetch random verse",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/random")
+    public ResponseEntity<?> getRandomVerse(
+            @Parameter(description = "Translation code", example = "KJV")
+            @RequestParam(defaultValue = "KJV") String translation) {
+
+        Random random = new Random();
+        int attempts = 0;
+        int maxAttempts = 10;
+
+        while (attempts < maxAttempts) {
+            String[] randomVerse = POPULAR_VERSES[random.nextInt(POPULAR_VERSES.length)];
+            String ref = randomVerse[0];
+            String defaultTranslation = randomVerse[1];
+
+            BibleReference reference = referenceParser.parse(ref);
+            if (reference == null) {
+                attempts++;
+                continue;
+            }
+            reference.setTranslation(translation.toUpperCase());
+
+            BibleVerse bibleVerse = bibleService.getVerse(reference);
+            if (bibleVerse != null && bibleVerse.getText() != null && !bibleVerse.getText().isBlank()) {
+                VerseResponse response = toVerseResponse(bibleVerse);
+                return ResponseEntity.ok(response);
+            }
+            attempts++;
+        }
+
+        return ResponseEntity.status(404).body(
+                new ErrorResponse(404, "Not Found", "Could not fetch a random verse. Please try again."));
+    }
+
+    // ─── POST /forward ───────────────────────────────────────────────────
+
+    @Operation(
+            summary = "Forward a verse to a Telegram chat",
+            description = "Fetches a Bible verse/chapter and sends it to a specified Telegram chat. "
+                    + "Supports single verses, verse ranges, chapters, and random verses. "
+                    + "The chat ID can be a user's private chat ID or a group chat ID. "
+                    + "The content is also returned in the response for display.",
+            security = @SecurityRequirement(name = "API Key")
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Content fetched and forwarded",
+                    content = @Content(schema = @Schema(implementation = ForwardResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Missing or invalid parameters",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Content not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/forward")
+    public ResponseEntity<?> forwardVerse(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Verse/chapter reference, translation, and target Telegram chat ID",
+                    required = true,
+                    content = @Content(schema = @Schema(implementation = ForwardRequest.class)))
+            @RequestBody ForwardRequest request) {
+
+        if (request == null || request.ref() == null || request.ref().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Bad Request", "'ref' is required (e.g. John 3:16, John 3, Romans 8:28-30, random)."));
+        }
+
+        if (request.chatId() == null || request.chatId().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Bad Request", "'chatId' is required (Telegram chat ID)."));
+        }
+
+        String translation = (request.translation() != null && !request.translation().isBlank())
+                ? request.translation().toUpperCase() : "KJV";
+
+        // Handle random verse request
+        if ("random".equalsIgnoreCase(request.ref().trim())) {
+            Random random = new Random();
+            String[] randomVerse = POPULAR_VERSES[random.nextInt(POPULAR_VERSES.length)];
+            BibleReference reference = referenceParser.parse(randomVerse[0]);
+            if (reference == null) {
+                return ResponseEntity.badRequest().body(
+                        new ErrorResponse(400, "Bad Request", "Could not generate random verse."));
+            }
+            reference.setTranslation(translation);
+
+            BibleVerse bibleVerse = bibleService.getVerse(reference);
+            if (bibleVerse == null || bibleVerse.getText() == null || bibleVerse.getText().isBlank()) {
+                return ResponseEntity.status(404).body(
+                        new ErrorResponse(404, "Not Found", "Could not fetch random verse."));
+            }
+
+            boolean forwarded = telegramMessageService.sendVerse(request.chatId(), bibleVerse);
+            ForwardResponse response = new ForwardResponse(
+                    bibleVerse.getReference(),
+                    stripHtml(bibleVerse.getText()),
+                    bibleVerse.getTranslation(),
+                    request.chatId(),
+                    forwarded
+            );
+            return ResponseEntity.ok(response);
+        }
+
+        // Parse the reference (supports verse, range, chapter)
+        BibleReference reference = referenceParser.parse(request.ref());
+        if (reference == null) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Bad Request",
+                            "Invalid Bible reference: " + request.ref()));
+        }
+        reference.setTranslation(translation);
+
+        // Use getSpecificVerses for verse lists (e.g., Rom 8:1,3,7)
+        BibleVerse bibleVerse;
+        if (reference.hasSpecificVerses()) {
+            bibleVerse = bibleService.getSpecificVerses(reference);
+        } else {
+            bibleVerse = bibleService.getVerse(reference);
+        }
+
+        if (bibleVerse == null || bibleVerse.getText() == null || bibleVerse.getText().isBlank()) {
+            return ResponseEntity.status(404).body(
+                    new ErrorResponse(404, "Not Found",
+                            "Content not found: " + reference.toDisplayString()));
+        }
+
+        // Send to Telegram (async — doesn't block the response)
+        boolean forwarded = telegramMessageService.sendVerse(request.chatId(), bibleVerse);
+
+        ForwardResponse response = new ForwardResponse(
+                bibleVerse.getReference(),
+                stripHtml(bibleVerse.getText()),
+                bibleVerse.getTranslation(),
+                request.chatId(),
+                forwarded
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ─── POST /query ────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "Unified Bible query endpoint",
+            description = "Single endpoint that handles ALL Bible lookups. The server automatically detects "
+                    + "the query type and returns the appropriate result.\n\n"
+                    + "Supported formats:\n"
+                    + "• Single verse: \"John 3:16\"\n"
+                    + "• Verse range: \"Romans 8:28-30\"\n"
+                    + "• Chapter: \"John 3\" or \"Psalm 23\"\n"
+                    + "• Verse list: \"John 1:1,4,2,3\"\n"
+                    + "• Random: \"random\"\n"
+                    + "• Search: \"For God so loved the world\"\n\n"
+                    + "If a chatId is provided, the result is also forwarded to that Telegram chat.",
+            security = @SecurityRequirement(name = "API Key")
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Query processed successfully",
+                    content = @Content(schema = @Schema(implementation = QueryResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Missing or invalid query",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Content not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/query")
+    public ResponseEntity<?> query(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Bible query with optional translation and chatId",
+                    required = true,
+                    content = @Content(schema = @Schema(implementation = QueryRequest.class)))
+            @RequestBody QueryRequest request) {
+
+        if (request == null || request.query() == null || request.query().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, "Bad Request", "'query' is required."));
+        }
+
+        String query = request.query().trim();
+        String translation = (request.translation() != null && !request.translation().isBlank())
+                ? request.translation().toUpperCase() : "KJV";
+        String chatId = request.chatId();
+
+        // 1. Handle random
+        if ("random".equalsIgnoreCase(query)) {
+            return handleRandomQuery(translation, chatId);
+        }
+
+        // 2. Try parsing as Bible reference (handles verse, range, chapter, verse list)
+        BibleReference reference = referenceParser.parse(query);
+        if (reference != null) {
+            reference.setTranslation(translation);
+            return handleReferenceQuery(reference, chatId);
+        }
+
+        // 3. If not a reference, treat as text search
+        if (query.length() >= 3) {
+            return handleSearchQuery(query, translation, chatId);
+        }
+
+        return ResponseEntity.badRequest().body(
+                new ErrorResponse(400, "Bad Request",
+                        "Could not understand query: \"" + query + "\". "
+                                + "Try a Bible reference (e.g. John 3:16), 'random', or a search phrase (3+ characters)."));
+    }
+
+    private ResponseEntity<?> handleRandomQuery(String translation, String chatId) {
+        Random random = new Random();
+        int attempts = 0;
+
+        while (attempts < 10) {
+            String[] randomVerse = POPULAR_VERSES[random.nextInt(POPULAR_VERSES.length)];
+            BibleReference reference = referenceParser.parse(randomVerse[0]);
+            if (reference == null) { attempts++; continue; }
+            reference.setTranslation(translation);
+
+            BibleVerse verse = bibleService.getVerse(reference);
+            if (verse != null && verse.getText() != null && !verse.getText().isBlank()) {
+                Boolean forwarded = null;
+                if (chatId != null && !chatId.isBlank()) {
+                    forwarded = telegramMessageService.sendVerse(chatId, verse);
+                }
+                return ResponseEntity.ok(new QueryResponse(
+                        "random", verse.getReference(), stripHtml(verse.getText()),
+                        verse.getTranslation(), verse.getVersionName(), chatId, forwarded, null));
+            }
+            attempts++;
+        }
+        return ResponseEntity.status(404).body(
+                new ErrorResponse(404, "Not Found", "Could not fetch a random verse."));
+    }
+
+    private ResponseEntity<?> handleReferenceQuery(BibleReference reference, String chatId) {
+        BibleVerse verse;
+        if (reference.hasSpecificVerses()) {
+            verse = bibleService.getSpecificVerses(reference);
+        } else {
+            verse = bibleService.getVerse(reference);
+        }
+
+        if (verse == null || verse.getText() == null || verse.getText().isBlank()) {
+            return ResponseEntity.status(404).body(
+                    new ErrorResponse(404, "Not Found",
+                            "Content not found: " + reference.toDisplayString()));
+        }
+
+        Boolean forwarded = null;
+        if (chatId != null && !chatId.isBlank()) {
+            forwarded = telegramMessageService.sendVerse(chatId, verse);
+        }
+
+        String type = "verse";
+        if (reference.getVerseStart() == null && reference.getChapter() != null) {
+            type = "chapter";
+        } else if (reference.getVerseEnd() != null && reference.getVerseEnd() > reference.getVerseStart()) {
+            type = "range";
+        } else if (reference.hasSpecificVerses()) {
+            type = "verses";
+        }
+
+        return ResponseEntity.ok(new QueryResponse(
+                type, verse.getReference(), stripHtml(verse.getText()),
+                verse.getTranslation(), verse.getVersionName(), chatId, forwarded, null));
+    }
+
+    private ResponseEntity<?> handleSearchQuery(String query, String translation, String chatId) {
+        List<BibleVerse> results = bibleService.searchVerses(query);
+
+        List<SearchResult> searchResults = new ArrayList<>();
+        for (BibleVerse v : results) {
+            searchResults.add(new SearchResult(
+                    v.getReference(), stripHtml(v.getText()),
+                    v.getTranslation(), v.getVersionName()));
+        }
+
+        if (searchResults.isEmpty()) {
+            return ResponseEntity.status(404).body(
+                    new ErrorResponse(404, "Not Found",
+                            "No verses found matching: \"" + query + "\""));
+        }
+
+        // If chatId provided, forward the top result
+        Boolean forwarded = null;
+        if (chatId != null && !chatId.isBlank() && !results.isEmpty()) {
+            forwarded = telegramMessageService.sendVerse(chatId, results.get(0));
+        }
+
+        String ref = searchResults.get(0).reference();
+        String text = searchResults.get(0).text();
+        String trans = searchResults.get(0).translation();
+        String version = searchResults.get(0).versionName();
+
+        return ResponseEntity.ok(new QueryResponse(
+                "search", ref, text, trans, version, chatId, forwarded, searchResults));
     }
 
     // ─── GET /health ─────────────────────────────────────────────────────

@@ -108,4 +108,43 @@ public final class ApiDtos {
             String appName,
             Integer rateLimitPerMinute
     ) {}
+
+    // ─── Forward: Send verse to Telegram ────────────────────────────────
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ForwardRequest(
+            String ref,
+            String translation,
+            String chatId
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ForwardResponse(
+            String reference,
+            String text,
+            String translation,
+            String chatId,
+            boolean forwarded
+    ) {}
+
+    // ─── Unified Query: Single endpoint for all Bible lookups ───────────
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record QueryRequest(
+            String query,
+            String translation,
+            String chatId
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record QueryResponse(
+            String type,
+            String reference,
+            String text,
+            String translation,
+            String versionName,
+            String chatId,
+            Boolean forwarded,
+            List<SearchResult> searchResults
+    ) {}
 }
